@@ -1,9 +1,17 @@
-import { ArrowRight, Satellite } from "lucide-react";
+import { ArrowRight, Headphones, Satellite, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { createLandingScene, isWideLayout, type LandingScene, type Phase } from "../landing/scene";
+import { LandingSound } from "../landing/sound";
 
 const readWide = () => isWideLayout(window.innerWidth, window.innerHeight);
+const SOUND_KEY = "astrohealth.landing.sound";
+const readSoundPref = () => {
+  try { return localStorage.getItem(SOUND_KEY) === "1"; } catch { return false; }
+};
+const saveSoundPref = (on: boolean) => {
+  try { localStorage.setItem(SOUND_KEY, on ? "1" : "0"); } catch { /* приватный режим — не страшно */ }
+};
 
 // Вступление: проблема → задача → почему решать на борту
 const CAPTIONS: Partial<Record<Phase, string>> = {
@@ -26,7 +34,37 @@ export function LandingPage() {
   const [phase, setPhase] = useState<Phase | "boot">("boot");
   const [noWebGL, setNoWebGL] = useState(false);
   const [wide, setWide] = useState(readWide);
+  const sound = useRef<LandingSound | null>(null);
+  const [soundOn, setSoundOn] = useState(false);
   const final = phase === "final";
+
+  const toggleSound = () => {
+    const s = (sound.current ??= new LandingSound());
+    const next = !s.enabled;
+    if (next) void s.enable();
+    else s.disable();
+    setSoundOn(next);
+    saveSoundPref(next);
+  };
+
+  // звук был включён в прошлый раз: включаем при первом же действии пользователя (иначе браузер не даст)
+  useEffect(() => {
+    if (!readSoundPref()) return;
+    const unlock = () => {
+      if (!sound.current?.enabled) toggleSound();
+      cleanup();
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    return cleanup;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => () => sound.current?.dispose(), []);
 
   useEffect(() => {
     const onResize = () => setWide(readWide());
@@ -40,7 +78,11 @@ export function LandingPage() {
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const startAt = Number(new URLSearchParams(window.location.search).get("t")) || 0;
     try {
-      scene.current = createLandingScene(host.current!, { reducedMotion, startAt, onPhase: setPhase });
+      scene.current = createLandingScene(host.current!, {
+        reducedMotion, startAt, onPhase: setPhase,
+        onCue: (c) => sound.current?.cue(c),
+        onAudioFrame: (f) => sound.current?.update(f),
+      });
     } catch {
       setNoWebGL(true);
       setPhase("final");
@@ -70,13 +112,31 @@ export function LandingPage() {
           </span>
           <span className="text-lg font-semibold tracking-tight">AstroHealth</span>
         </span>
-        {!final && (
-          <button type="button" onClick={() => scene.current?.skip()}
-            className="min-h-11 rounded-xl border border-white/20 bg-black/30 px-4 text-sm text-muted backdrop-blur transition-colors hover:border-white/40 hover:text-fg">
-            Пропустить
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={toggleSound} aria-pressed={soundOn}
+            aria-label={soundOn ? "Выключить звук" : "Включить звук"} title={soundOn ? "Выключить звук" : "Включить звук"}
+            className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/20 bg-black/30 text-muted backdrop-blur transition-colors hover:border-white/40 hover:text-fg">
+            {soundOn ? <Volume2 aria-hidden className="h-5 w-5" /> : <VolumeX aria-hidden className="h-5 w-5" />}
           </button>
-        )}
+          {!final && (
+            <button type="button" onClick={() => scene.current?.skip()}
+              className="min-h-11 rounded-xl border border-white/20 bg-black/30 px-4 text-sm text-muted backdrop-blur transition-colors hover:border-white/40 hover:text-fg">
+              Пропустить
+            </button>
+          )}
+        </div>
       </header>
+
+      {/* приглашение включить звук — во время вступления, пока звук выключен */}
+      {!soundOn && !final && !noWebGL && (
+        <div className="absolute inset-x-0 bottom-[5%] z-10 flex justify-center px-6">
+          <button type="button" onClick={toggleSound}
+            className="landing-sound-hint inline-flex min-h-11 items-center gap-2.5 rounded-full border border-white/20 bg-black/40 px-5 text-sm text-fg/90 backdrop-blur transition-colors hover:border-white/40">
+            <Headphones aria-hidden className="h-4 w-4 text-accent" />
+            Включить звук
+          </button>
+        </div>
+      )}
 
       {phase === "boot" && !noWebGL && (
         <div role="status" className="absolute inset-0 z-10 flex items-center justify-center">

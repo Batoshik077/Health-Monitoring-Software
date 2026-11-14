@@ -18,12 +18,29 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 export type Phase = "ready" | "caption1" | "caption2" | "caption3" | "final";
 
+/** Звуковые события сцены (см. landing/sound.ts). */
+export type Cue = "dawn" | "blip" | "riser" | "impact" | "reveal";
+
+/** Каждый кадр: насколько близко к камере корабли — для свиста пролёта, панорамы и Доплера. */
+export interface AudioFrame {
+  /** 0…1 — близость «Союза» к камере; pan −1…1; approach > 0 — приближается (м/с в единицах сцены). */
+  flyby: { near: number; pan: number; approach: number; engine: number };
+  pass: { near: number; pan: number; approach: number; engine: number };
+}
+
 export interface SceneOptions {
   reducedMotion: boolean;
   /** Начать с указанной секунды (отладка: /?t=8). */
   startAt?: number;
   onPhase: (phase: Phase) => void;
+  onCue?: (cue: Cue) => void;
+  onAudioFrame?: (f: AudioFrame) => void;
 }
+
+const CUES: [number, Cue][] = [
+  [0.05, "dawn"], [1.4, "blip"], [4.8, "blip"], [8.2, "blip"],
+  [6.9, "riser"], [8.75, "impact"], [12.2, "reveal"],
+];
 
 export interface LandingScene {
   skip: () => void;
@@ -523,15 +540,19 @@ interface CraftSpec {
  *   8.0  второй «Союз» проходит перед объективом к станции
  *   10.4 камера отъезжает — финальный кадр
  */
+// Точки прибытия посчитаны из экранных координат финального кадра: МКС — слева от Земли,
+// «Союзы» — справа сверху и справа снизу, чтобы корабли не собирались в одну кучу.
+// Орбиты медленные (omega мала), чтобы к финалу корабли почти не уплывали с этих мест.
 const CRAFTS: CraftSpec[] = [
   // МКС: ферма поперёк кадра, панели развёрнуты к зрителю — ракурс как на фото станции над Землёй
-  { kind: "iss", arrive: [-2.29, -1.31, 3.94], dir: [0.35, 1, 0], omega: 0.03, start: 4.6, dur: 3.8, from: [-1, 0.2, -0.6], dist: 30 },
-  // «Союз» идёт к станции и проходит прямо перед камерой во время облёта МКС
-  { kind: "soyuz", arrive: [-0.56, -0.25, 3.23], dir: [0.35, 1, 0], omega: 0.04, start: 8.0, dur: 3.4, from: [1, -0.2, 0.3], dist: 40, roll: 1.6 },
-  // «Союз» — пролёт над головой: стартует позади камеры и уносится к Земле
-  { kind: "soyuz", arrive: [-3.07, 1.91, 7.11], arriveNarrow: [1.48, 0.74, 8.11], dir: [1, 0.15, 0.2], omega: 0.02, start: 4.2, dur: 3.6, from: [0.42, -0.1, 0.96], dist: 30, roll: 2.8 },
+  { kind: "iss", arrive: [-2.46, -1.66, 3.61], dir: [0.35, 1, 0], omega: 0.015, start: 4.6, dur: 3.8, from: [-1, 0.2, -0.6], dist: 30 },
+  // «Союз» прилетает слева, проходит прямо перед объективом во время облёта МКС и уходит вправо вниз
+  { kind: "soyuz", arrive: [2.3, -1.67, 5.05], arriveNarrow: [2.5, -3.21, 6.36], dir: [0.2, 1, 0], omega: 0.015, start: 8.0, dur: 3.4, from: [-1, 0.1, -0.1], dist: 40, roll: 1.6 },
+  // «Союз» — пролёт мимо зрителя: стартует позади камеры и уносится вправо вверх
+  { kind: "soyuz", arrive: [0.7, 2.64, 6.44], arriveNarrow: [1.58, 0.73, 8.12], dir: [1, 0.15, 0.2], omega: 0.01, start: 4.2, dur: 3.6, from: [0.05, -0.17, 1], dist: 30, roll: 2.8 },
 ];
-const FLYBY = 2; // индекс «Союза», пролетающего над камерой
+const PASS = 1;   // «Союз», проходящий перед объективом у МКС
+const FLYBY = 2;  // «Союз», пролетающий мимо камеры
 
 interface Craft {
   spec: CraftSpec;
@@ -667,6 +688,7 @@ export function createLandingScene(host: HTMLElement, opts: SceneOptions): Landi
   }
   const issCraft = crafts.find((c) => c.spec.kind === "iss")!;
   const flybyCraft = crafts.find((c) => c.spec === CRAFTS[FLYBY])!;
+  const passCraft = crafts.find((c) => c.spec === CRAFTS[PASS])!;
 
   // загрузка ассетов: время сцены не идёт, пока не загрузятся текстуры Земли и МКС
   let ready = false;
@@ -756,33 +778,53 @@ export function createLandingScene(host: HTMLElement, opts: SceneOptions): Landi
     const fly = easeInOutCubic(clamp01(t / 5.5));
     return out.set(0, THREE.MathUtils.lerp(6, 1.1, fly), THREE.MathUtils.lerp(44, introDist(), fly));
   };
-  const issAt = (t: number, out: THREE.Vector3) => craftPos(issCraft, t, out);
+  // камера ориентируется по орбите МКС, а не по её текущей позиции: во время торможения станция
+  // ещё движется быстро, и камера, привязанная к ней, дёргалась бы вслед
+  const issAt = (t: number, out: THREE.Vector3) => orbitPos(issCraft, t, out);
   const near = () => (wide ? 1 : 1.6); // на узких экранах держим дистанцию до МКС больше
   interface CamKey { t: number; pos: (o: THREE.Vector3, t: number) => THREE.Vector3; look: (o: THREE.Vector3, t: number) => THREE.Vector3 }
   const KEYS: CamKey[] = [
     { t: 5.0, pos: (o) => introPos(5, o), look: (o) => o.set(0, 0, 0) },
-    // разворот вслед за «Союзом», только что пронёсшимся над головой
-    { t: 6.8, pos: (o) => o.set(1.2, 2.2, 12.5 + (wide ? 0 : 4)), look: (o, t) => craftPos(flybyCraft, t, o).lerp(ORIGIN, 0.35) },
+    // разворот вслед за «Союзом», только что пронёсшимся мимо: смотрим на место, куда он летит
+    // (неподвижная точка — иначе камеру мотало бы за быстрым кораблём)
+    { t: 6.8, pos: (o) => o.set(1.2, 2.2, 12.5 + (wide ? 0 : 4)), look: (o) => o.copy(flybyCraft.arrive).lerp(ORIGIN, 0.35) },
     // подлёт к МКС и облёт панелей по дуге
     { t: 8.8, pos: (o, t) => issAt(t, o).add(tmp3.set(1.9, 0.8, 2.8).multiplyScalar(near())), look: (o, t) => issAt(t, o) },
-    { t: 10.4, pos: (o, t) => issAt(t, o).add(tmp3.set(-1.4, 0.5, 2.4).multiplyScalar(near())), look: (o, t) => issAt(t, o).add(tmp3.set(0.3, 0, 0)) },
+    { t: 10.6, pos: (o, t) => issAt(t, o).add(tmp3.set(-0.6, 0.6, 3.0).multiplyScalar(near())), look: (o, t) => issAt(t, o).add(tmp3.set(0.2, 0, 0)) },
     // отъезд к финальному кадру
     { t: 13.0, pos: (o) => o.set(camFinalTarget.x * 0.55, 1.1 + camFinalTarget.y * 0.35, finalDist()), look: (o) => o.copy(camFinalTarget) },
   ];
   const ORIGIN = new THREE.Vector3();
   const tmp3 = new THREE.Vector3();
-  const kp = [0, 1, 2, 3].map(() => new THREE.Vector3());
-  const kl = [0, 1, 2, 3].map(() => new THREE.Vector3());
+  const kp = KEYS.map(() => new THREE.Vector3());
+  const kl = KEYS.map(() => new THREE.Vector3());
+  const m0 = new THREE.Vector3();
+  const m1 = new THREE.Vector3();
   const camPos = new THREE.Vector3();
   const camLook = new THREE.Vector3();
-  const catmull = (p: THREE.Vector3[], s: number, out: THREE.Vector3) => {
+  const introEndVel = new THREE.Vector3();
+  /**
+   * Сплайн Эрмита по времени: касательная в ключе = (P[i+1] − P[i−1]) / (t[i+1] − t[i−1]) (ед./с),
+   * поэтому скорость камеры непрерывна на стыках — никаких рывков. В первом ключе скорость
+   * совпадает с концом подлёта, в последнем — ноль (мягкая остановка).
+   */
+  const keyVel = (pts: THREE.Vector3[], i: number, out: THREE.Vector3, startVel: THREE.Vector3) => {
+    const last = KEYS.length - 1;
+    if (i === 0) return out.copy(startVel);
+    if (i === last) return out.set(0, 0, 0);
+    return out.subVectors(pts[i + 1], pts[i - 1]).divideScalar(KEYS[i + 1].t - KEYS[i - 1].t);
+  };
+  const hermite = (pts: THREE.Vector3[], i: number, s: number, h: number, startVel: THREE.Vector3, out: THREE.Vector3) => {
+    keyVel(pts, i, m0, startVel);
+    keyVel(pts, i + 1, m1, startVel);
     const s2 = s * s, s3 = s2 * s;
     return out.set(0, 0, 0)
-      .addScaledVector(p[0], -0.5 * s3 + s2 - 0.5 * s)
-      .addScaledVector(p[1], 1.5 * s3 - 2.5 * s2 + 1)
-      .addScaledVector(p[2], -1.5 * s3 + 2 * s2 + 0.5 * s)
-      .addScaledVector(p[3], 0.5 * s3 - 0.5 * s2);
+      .addScaledVector(pts[i], 2 * s3 - 3 * s2 + 1)
+      .addScaledVector(m0, (s3 - 2 * s2 + s) * h)
+      .addScaledVector(pts[i + 1], -2 * s3 + 3 * s2)
+      .addScaledVector(m1, (s3 - s2) * h);
   };
+  const ZERO = new THREE.Vector3();
   const cameraAt = (t: number) => {
     const last = KEYS.length - 1;
     if (t < KEYS[0].t) {
@@ -797,27 +839,64 @@ export function createLandingScene(host: HTMLElement, opts: SceneOptions): Landi
     }
     let i = 0;
     while (t >= KEYS[i + 1].t) i++;
-    let s = (t - KEYS[i].t) / (KEYS[i + 1].t - KEYS[i].t);
-    if (i === 0) s = s * s * (2 - s);            // плавный разгон после подлёта
-    if (i === last - 1) s = 1 - Math.pow(1 - s, 3); // мягкая остановка в финале
-    const idx = [Math.max(i - 1, 0), i, i + 1, Math.min(i + 2, last)];
-    idx.forEach((k, j) => { KEYS[k].pos(kp[j], t); KEYS[k].look(kl[j], t); });
-    catmull(kp, s, camPos);
-    catmull(kl, s, camLook);
+    KEYS.forEach((k, j) => { k.pos(kp[j], t); k.look(kl[j], t); });
+    const h = KEYS[i + 1].t - KEYS[i].t;
+    const s = (t - KEYS[i].t) / h;
+    // скорость в конце подлёта — чтобы переход из вступления был бесшовным
+    introPos(KEYS[0].t, introEndVel).sub(introPos(KEYS[0].t - 0.01, tmp3)).divideScalar(0.01);
+    hermite(kp, i, s, h, introEndVel, camPos);
+    hermite(kl, i, s, h, ZERO, camLook);
   };
 
+  // ---- звук ----
+  const firedCues = new Set<number>();
+  /** Отметить события до момента t как уже прошедшие — без звука (перемотка, старт с середины). */
+  const silenceCuesBefore = (t: number, except?: Cue) =>
+    CUES.forEach(([at, cue], i) => at < t && cue !== except && firedCues.add(i));
+  const prevDist = [99, 99];
+  const toCam = new THREE.Vector3();
+  let lastDt = 0;
+  const audioOf = (c: Craft, slot: number) => {
+    if (!c.group.visible) {
+      prevDist[slot] = 99;
+      return { near: 0, pan: 0, approach: 0, engine: 0 };
+    }
+    const dd = c.group.position.distanceTo(camera.position);
+    const approach = lastDt > 0 && prevDist[slot] < 90 ? (prevDist[slot] - dd) / lastDt : 0;
+    prevDist[slot] = dd;
+    toCam.copy(c.group.position).applyMatrix4(camera.matrixWorldInverse);
+    return {
+      near: Math.exp(-(dd * dd) / 30),
+      pan: THREE.MathUtils.clamp(toCam.x / Math.max(1, Math.abs(toCam.z)), -1, 1),
+      approach,
+      engine: c.engine ? (c.engine.material as THREE.SpriteMaterial).opacity : 0,
+    };
+  };
+
+  let wasReady = false;
   const frame = () => {
     const now = performance.now();
     const dt = Math.min((now - last) / 1000, 0.1) * timeScale;
     last = now;
     if (ready) {
+      if (!wasReady) {
+        wasReady = true;
+        silenceCuesBefore(T);
+      }
       T += dt;
+      lastDt = dt;
       for (const [at, p] of PHASES) {
         if (T >= at && !fired.has(p)) {
           fired.add(p);
           opts.onPhase(p);
         }
       }
+      CUES.forEach(([at, cue], i) => {
+        if (T >= at && !firedCues.has(i)) {
+          firedCues.add(i);
+          opts.onCue?.(cue);
+        }
+      });
     }
 
     const fade = ready ? smooth(0, 2, T) : 0;
@@ -874,26 +953,35 @@ export function createLandingScene(host: HTMLElement, opts: SceneOptions): Landi
     camera.position.copy(camPos);
     camera.position.x += pointer.sx * 0.7;
     camera.position.y -= pointer.sy * 0.45;
-    // пролёт «Союза» рядом с камерой: дрожь и кратковременное расширение угла обзора
+    // пролёт «Союза» рядом с камерой: плавное кратковременное расширение угла обзора (без тряски)
     const d = flybyCraft.group.visible ? flybyCraft.group.position.distanceTo(camPos) : 99;
-    const punch = Math.exp(-(d * d) / 9);
-    if (!opts.reducedMotion && punch > 0.01) {
-      camera.position.x += Math.sin(T * 61) * 0.07 * punch;
-      camera.position.y += Math.sin(T * 47 + 1.3) * 0.07 * punch;
-    }
-    const fov = 40 + 9 * punch;
+    const punch = Math.exp(-(d * d) / 12);
+    const fov = 40 + (opts.reducedMotion ? 0 : 5 * punch);
     if (Math.abs(camera.fov - fov) > 0.01) {
       camera.fov = fov;
       camera.updateProjectionMatrix();
     }
     camera.lookAt(camLook);
 
+    // звук: близость кораблей к камере, панорама и скорость сближения (для Доплера)
+    if (ready && opts.onAudioFrame) {
+      camera.updateMatrixWorld();
+      opts.onAudioFrame({ flyby: audioOf(flybyCraft, 0), pass: audioOf(passCraft, 1) });
+    }
+
     renderer.render(scene, camera);
   };
   renderer.setAnimationLoop(frame);
+  // отладка плавности камеры: /?debug открывает камеру для автотестов
+  if (new URLSearchParams(window.location.search).has("debug")) {
+    (window as unknown as { __landing?: unknown }).__landing = { camera, getT: () => T };
+  }
 
   const skip = () => {
-    if (T < FINAL_T) T = FINAL_T + 0.6;
+    if (T >= FINAL_T) return;
+    T = FINAL_T + 0.6;
+    silenceCuesBefore(T, "reveal"); // финальный аккорд всё равно прозвучит
+    prevDist.fill(99);
   };
 
   const dispose = () => {
