@@ -1,10 +1,10 @@
 id: fatigue
 title: "Хроническая усталость"
-description: "5 ночей подряд по 5 часов сна (ускорение времени)"
+description: "5 ночей подряд по 5 часов сна: история сразу дописывается, чтобы показать за секунды"
 target: astronaut
 nights: 5
 effects:
   - { metric: sleep_h, to: 5.0 }
   - { metric: hr_rest, delta: +6 }
   - { metric: survey_fatigue, to: 8 }
-expected_alerts: [sleep_debt, readiness_low]
+expected_alerts: [sleep_debt, stress_high]

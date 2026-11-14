@@ -64,19 +64,27 @@
 
 Пороги и факты с источниками — в [`thresholds-and-facts.md`](thresholds-and-facts.md), конфиг — в [`../config/thresholds.yaml`](../config/thresholds.yaml).
 
-### Формат событий (WebSocket)
+### Формат WebSocket
+
+Бэкенд 4 раза в секунду (реального времени) рассылает **снимок состояния** целиком — фронтенду не нужно склеивать события.
+`/ws/onboard` отдаёт снимок борта, `/ws/ground` — снимок Земли (только «долетевшее»).
 
 ```json
-{ "type": "vitals", "t": "2031-03-04T12:00:05Z", "astronaut": "a2",
-  "data": { "hr": 112, "spo2": 89, "rr": 24, "sbp": 118, "temp": 36.9 },
-  "news2": 6, "z": { "hr": 3.4 }, "readiness": 58 }
-
-{ "type": "alert", "id": "al_17", "severity": "critical", "astronaut": "a2",
-  "rule": "spo2_critical", "message": "SpO₂ 87 % в течение 45 с",
-  "protocol": "hypoxia", "status": "active" }
-
-{ "type": "link", "up": true, "delay_s": 720, "queue": { "p0": 0, "p1": 34, "p2": 210 } }
+{ "type": "snapshot", "side": "onboard", "t": 3605.0, "time": "2031-03-04T09:00:05Z", "speed": 60,
+  "crew": [{ "id": "a3", "name": "Инженер", "vitals": { "hr": 87, "spo2": 86, "rr": 21, "sbp": 112, "temp": 36.4 },
+             "news2": { "total": 5, "parts": { "spo2": 3, "rr": 2 }, "level": "warning" },
+             "z": { "hr": 8.1 }, "readiness": 54, "status": "red",
+             "systems": { "cardio": { "status": "yellow", "detail": "пульс 87, давление 112" } },
+             "todo": [{ "kind": "protocol", "text": "Пройти протокол: Низкий кислород в крови" }] }],
+  "modules": [{ "id": "lab", "co2_mmhg": 2.2, "co2_avg_1h": 2.1, "o2_pct": 21.0, "pressure_kpa": 101.3 }],
+  "alerts": [{ "id": "al_1", "rule": "spo2_critical", "severity": "critical", "subject_name": "Инженер",
+               "message": "SpO₂ 86 % — ниже 88 % дольше 30 с", "status": "active", "protocol_run_id": "pr_1" }],
+  "protocol_runs": [{ "id": "pr_1", "title": "Низкий кислород в крови", "steps": ["…"], "steps_done": [true, false] }],
+  "link": { "up": true, "delay_s": 720, "queue": { "p0": 0, "p1": 34, "p2": 210 }, "in_flight": 280 },
+  "scenarios": [{ "id": "hypoxia", "target": "a3", "elapsed_s": 95 }] }
 ```
+
+Внутри канала связи на Землю идут пакеты `alert`, `protocol_run` (P0), `summary` и `env` (P1, раз в минуту) и `raw` (P2, раз в 10 с).
 
 ### Таблицы SQLite
 
@@ -123,6 +131,8 @@ POST /api/director/scenario/{name}     {astronaut_id, intensity}
 POST /api/director/clock               {speed: 60}
 POST /api/director/link                {up: false} или {profile: "mars", delay_s: 720}
 POST /api/director/reset
+POST /api/director/scenarios/stop      остановить все сценарии
+GET  /api/director/scenarios           список сценариев
 
 WebSocket
 /ws/onboard                            поток для экранов борта

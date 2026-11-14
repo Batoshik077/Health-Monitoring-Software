@@ -1,0 +1,8 @@
+id: resting_hr_rise
+title: "Пульс выше личной нормы"
+description: "Пульс в покое 85: по общим нормам это норма, но не для инженера с пульсом 52"
+target: astronaut
+duration_s: 1800
+effects:
+  - { metric: hr, to: 85, ramp_s: 120 }
+expected_alerts: [baseline_hr]

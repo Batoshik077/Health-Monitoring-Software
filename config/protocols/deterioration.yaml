@@ -1,0 +1,13 @@
+id: deterioration
+rules: [news2_warning, news2_critical]
+title: "Ухудшение общего состояния"
+explain: "Несколько показателей одновременно вне нормы (сумма баллов NEWS2)."
+steps:
+  - "Прекратите работу, сядьте или зафиксируйтесь"
+  - "Проверьте датчики"
+  - "Позовите бортового медика"
+  - "Отметьте симптомы в дневнике"
+call: cmo
+recheck_after_s: 300
+success: "news2 <= 4"
+escalate_if_not: commander

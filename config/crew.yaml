@@ -4,28 +4,38 @@ mission:
   name: "Mars Transit"
   link_profile: mars        # iss | moon | mars
   link_delay_s: 720         # 12 минут в одну сторону
+  link_bandwidth_pps: 2     # пакетов в секунду времени миссии
+  start_day: 120            # день миссии на старте симуляции (для оценки потери костной массы)
 
 astronauts:
   - id: a1
     name: "Командир"
     role: commander
     module: hab
+    dose_msv_start: 140     # доза за прошлые полёты (мок)
+    exercise_hours: [9, 16]     # начало тренировок, по 60 мин
     baseline: { hr: 62, spo2: 98, rr: 14, sbp: 120, temp: 36.6, sleep_h: 6.5 }
   - id: a2
     name: "Бортовой медик"
     role: cmo
     module: hab
+    dose_msv_start: 95     # доза за прошлые полёты (мок)
+    exercise_hours: [10, 17]     # начало тренировок, по 60 мин
     baseline: { hr: 70, spo2: 98, rr: 15, sbp: 118, temp: 36.7, sleep_h: 6.2 }
   - id: a3
     name: "Инженер"
     role: engineer
     module: lab
     note: "спортсмен: пульс в покое 52 — для демо личной нормы"
+    dose_msv_start: 210     # доза за прошлые полёты (мок)
+    exercise_hours: [12, 18]     # начало тренировок, по 60 мин
     baseline: { hr: 52, spo2: 98, rr: 12, sbp: 115, temp: 36.5, sleep_h: 6.8 }
   - id: a4
     name: "Учёный"
     role: scientist
     module: lab
+    dose_msv_start: 60     # доза за прошлые полёты (мок)
+    exercise_hours: [11, 18]     # начало тренировок, по 60 мин
     baseline: { hr: 75, spo2: 97, rr: 16, sbp: 124, temp: 36.8, sleep_h: 6.0 }
 
 modules:

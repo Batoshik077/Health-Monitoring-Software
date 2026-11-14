@@ -1,5 +1,5 @@
 id: tachycardia
-rules: [hr_critical, hr_warning]
+rules: [hr_extreme, baseline_hr]
 title: "Высокий пульс в покое"
 explain: "Пульс заметно выше нормы, хотя нагрузки нет."
 steps:

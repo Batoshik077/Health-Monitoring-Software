@@ -10,4 +10,4 @@ effects:
 recovery:
   trigger: protocol_done    # после выполнения протокола показатели возвращаются к норме
   ramp_s: 120
-expected_alerts: [spo2_critical, news2_critical]
+expected_alerts: [spo2_critical]   # одышка, тахикардия и общий балл NEWS2 не дублируют тревогу

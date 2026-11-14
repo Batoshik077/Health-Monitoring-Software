@@ -31,6 +31,10 @@ radiation:
   spike_multiplier: 5
   daily_rate_msv: { iss: 0.5, mars_transit: 1.8, mars_surface: 0.67 }
 
+exercise:
+  plan_min_per_day: 120      # [решение команды] ориентир ~2 ч тренировок в день
+  deficit_fraction: 0.7
+
 sleep:
   warning_hours: 6
   warning_nights_in_row: 3

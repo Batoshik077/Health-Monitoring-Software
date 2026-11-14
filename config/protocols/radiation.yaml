@@ -1,5 +1,5 @@
 id: radiation
-rules: [radiation_spike, radiation_budget_warning]
+rules: [radiation_spike, radiation_budget_warning, radiation_budget_critical]
 title: "Повышенная радиация"
 explain: "Мощность дозы резко выросла (вероятна солнечная вспышка) или израсходована большая часть карьерного лимита."
 steps:
@@ -10,3 +10,4 @@ call: commander
 recheck_after_s: 1800
 success: "dose_rate <= 2x baseline"
 escalate_if_not: commander
+on_done: { move_to: storm }   # после протокола экипаж модуля переходит в укрытие
