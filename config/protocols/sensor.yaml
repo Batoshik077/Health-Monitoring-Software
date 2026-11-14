@@ -1,0 +1,12 @@
+id: sensor
+rules: [sensor_quality]
+title: "Проблема с датчиком"
+explain: "Данные с датчика невозможные или пропали. Это не медицинская тревога."
+steps:
+  - "Проверьте, что датчик надет и прилегает"
+  - "Проверьте заряд"
+  - "Перезапустите или замените датчик"
+call: none
+recheck_after_s: 120
+success: "signal_quality == ok"
+escalate_if_not: cmo

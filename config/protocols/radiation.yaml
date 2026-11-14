@@ -1,0 +1,12 @@
+id: radiation
+rules: [radiation_spike, radiation_budget_warning]
+title: "Повышенная радиация"
+explain: "Мощность дозы резко выросла (вероятна солнечная вспышка) или израсходована большая часть карьерного лимита."
+steps:
+  - "Перейдите в укрытие от радиации"
+  - "Отложите выходы и работы в слабо защищённых модулях"
+  - "Оставайтесь в укрытии, пока система не покажет «безопасно»"
+call: commander
+recheck_after_s: 1800
+success: "dose_rate <= 2x baseline"
+escalate_if_not: commander

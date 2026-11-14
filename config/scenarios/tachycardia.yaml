@@ -1,0 +1,9 @@
+id: tachycardia
+title: "Тахикардия в покое"
+description: "Пульс 140 без нагрузки"
+target: astronaut
+duration_s: 300
+effects:
+  - { metric: hr, to: 140, ramp_s: 30 }
+  - { metric: activity, to: 0 }
+expected_alerts: [hr_critical]

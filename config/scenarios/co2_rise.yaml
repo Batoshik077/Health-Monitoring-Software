@@ -1,0 +1,9 @@
+id: co2_rise
+title: "Рост CO₂ в модуле"
+description: "CO₂ растёт до 5 мм рт. ст.; тревога у всех, кто в модуле"
+target: module
+duration_s: 1800
+effects:
+  - { metric: co2_mmhg, to: 5.0, ramp_s: 900 }
+  - { metric: rr, delta: +3, ramp_s: 900, applies_to: crew_in_module }
+expected_alerts: [co2_warning]

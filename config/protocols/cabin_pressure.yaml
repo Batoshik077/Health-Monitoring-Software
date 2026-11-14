@@ -1,0 +1,12 @@
+id: cabin_pressure
+rules: [cabin_pressure_warning, cabin_pressure_critical]
+title: "Падение давления в модуле"
+explain: "Давление в кабине падает — возможна утечка."
+steps:
+  - "Немедленно сообщите всему экипажу"
+  - "Покиньте модуль и закройте люк по процедуре корабля"
+  - "Соберитесь в безопасном модуле"
+call: crew
+recheck_after_s: 60
+success: "pressure_rate_per_min > -0.1"
+escalate_if_not: commander

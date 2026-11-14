@@ -1,0 +1,13 @@
+id: hypoxia
+title: "Гипоксия"
+description: "SpO₂ плавно падает, пульс и дыхание растут"
+target: astronaut           # выбирается на пульте
+duration_s: 600
+effects:
+  - { metric: spo2, from: 98, to: 86, ramp_s: 180 }
+  - { metric: hr,   delta: +35, ramp_s: 180 }
+  - { metric: rr,   delta: +10, ramp_s: 180 }
+recovery:
+  trigger: protocol_done    # после выполнения протокола показатели возвращаются к норме
+  ramp_s: 120
+expected_alerts: [spo2_critical, news2_critical]

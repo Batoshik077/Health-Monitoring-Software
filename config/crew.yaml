@@ -1,0 +1,34 @@
+# Экипаж для симулятора (мок-данные). Личная норма — стартовые значения генератора;
+# система всё равно сама выучит базовую линию за первые дни миссии.
+mission:
+  name: "Mars Transit"
+  link_profile: mars        # iss | moon | mars
+  link_delay_s: 720         # 12 минут в одну сторону
+
+astronauts:
+  - id: a1
+    name: "Командир"
+    role: commander
+    module: hab
+    baseline: { hr: 62, spo2: 98, rr: 14, sbp: 120, temp: 36.6, sleep_h: 6.5 }
+  - id: a2
+    name: "Бортовой медик"
+    role: cmo
+    module: hab
+    baseline: { hr: 70, spo2: 98, rr: 15, sbp: 118, temp: 36.7, sleep_h: 6.2 }
+  - id: a3
+    name: "Инженер"
+    role: engineer
+    module: lab
+    note: "спортсмен: пульс в покое 52 — для демо личной нормы"
+    baseline: { hr: 52, spo2: 98, rr: 12, sbp: 115, temp: 36.5, sleep_h: 6.8 }
+  - id: a4
+    name: "Учёный"
+    role: scientist
+    module: lab
+    baseline: { hr: 75, spo2: 97, rr: 16, sbp: 124, temp: 36.8, sleep_h: 6.0 }
+
+modules:
+  - { id: hab, name: "Жилой модуль",  co2_mmhg: 2.0, o2_pct: 21.0, pressure_kpa: 101.3 }
+  - { id: lab, name: "Лаборатория",   co2_mmhg: 2.2, o2_pct: 21.0, pressure_kpa: 101.3 }
+  - { id: storm, name: "Укрытие от радиации", co2_mmhg: 1.8, o2_pct: 21.0, pressure_kpa: 101.3 }

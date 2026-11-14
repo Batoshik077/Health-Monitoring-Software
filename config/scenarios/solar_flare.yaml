@@ -1,0 +1,11 @@
+id: solar_flare
+title: "Солнечная вспышка"
+description: "Мощность дозы радиации резко растёт"
+target: all
+duration_s: 7200
+effects:
+  - { metric: dose_rate_msv_day, multiplier: 20, ramp_s: 300 }
+recovery:
+  in_module: storm          # в укрытии мощность дозы падает
+  multiplier: 2
+expected_alerts: [radiation_spike]

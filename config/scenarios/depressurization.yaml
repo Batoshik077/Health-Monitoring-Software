@@ -1,0 +1,8 @@
+id: depressurization
+title: "Разгерметизация"
+description: "Давление в модуле падает быстрее 0.5 кПа/мин"
+target: module
+duration_s: 600
+effects:
+  - { metric: pressure_kpa, rate_per_min: -0.8 }
+expected_alerts: [cabin_pressure_critical]

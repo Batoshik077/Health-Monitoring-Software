@@ -1,0 +1,8 @@
+id: sensor_fault
+title: "Отказ датчика"
+description: "Датчик выдаёт физически невозможные значения или пропадает"
+target: astronaut
+duration_s: 300
+effects:
+  - { metric: spo2, pattern: garbage }   # скачки 0 ↔ 100, пропуски
+expected_alerts: [sensor_quality]        # не медицинская тревога
