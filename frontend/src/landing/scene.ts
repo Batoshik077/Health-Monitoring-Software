@@ -19,7 +19,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 export type Phase = "ready" | "caption1" | "caption2" | "caption3" | "final";
 
 /** Звуковые события сцены (см. landing/sound.ts). */
-export type Cue = "dawn" | "blip" | "riser" | "impact" | "reveal";
+export type Cue = "dawn" | "blip" | "riser" | "impact" | "reveal" | "depart";
 
 /** Каждый кадр: насколько близко к камере корабли — для свиста пролёта, панорамы и Доплера. */
 export interface AudioFrame {
@@ -44,6 +44,8 @@ const CUES: [number, Cue][] = [
 
 export interface LandingScene {
   skip: () => void;
+  /** Переход в приложение: камера разгоняется и «ныряет» к МКС. */
+  depart: () => void;
   dispose: () => void;
 }
 
@@ -953,10 +955,19 @@ export function createLandingScene(host: HTMLElement, opts: SceneOptions): Landi
     camera.position.copy(camPos);
     camera.position.x += pointer.sx * 0.7;
     camera.position.y -= pointer.sy * 0.45;
+    // переход в приложение: плавный разгон камеры к МКС (ease-in), угол обзора расширяется — эффект «прыжка»
+    let departK = 0;
+    if (departAt !== null) {
+      departK = Math.pow(clamp01((now - departAt) / 1700), 3);
+      issAt(T, tmp3);
+      camLook.lerp(tmp3, Math.min(1, departK * 3));
+      camera.position.lerp(tmp3, departK * 0.92);
+    }
+
     // пролёт «Союза» рядом с камерой: плавное кратковременное расширение угла обзора (без тряски)
     const d = flybyCraft.group.visible ? flybyCraft.group.position.distanceTo(camPos) : 99;
     const punch = Math.exp(-(d * d) / 12);
-    const fov = 40 + (opts.reducedMotion ? 0 : 5 * punch);
+    const fov = 40 + (opts.reducedMotion ? 0 : 5 * punch + 38 * departK);
     if (Math.abs(camera.fov - fov) > 0.01) {
       camera.fov = fov;
       camera.updateProjectionMatrix();
@@ -976,6 +987,11 @@ export function createLandingScene(host: HTMLElement, opts: SceneOptions): Landi
   if (new URLSearchParams(window.location.search).has("debug")) {
     (window as unknown as { __landing?: unknown }).__landing = { camera, getT: () => T };
   }
+
+  let departAt: number | null = null;
+  const depart = () => {
+    if (departAt === null && !opts.reducedMotion) departAt = performance.now();
+  };
 
   const skip = () => {
     if (T >= FINAL_T) return;
@@ -1010,5 +1026,5 @@ export function createLandingScene(host: HTMLElement, opts: SceneOptions): Landi
     renderer.domElement.remove();
   };
 
-  return { skip, dispose };
+  return { skip, depart, dispose };
 }

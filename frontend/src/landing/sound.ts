@@ -29,6 +29,8 @@ export class LandingSound {
   private drone!: GainNode;
   private voices: Voice[] = [];
   private suspendTimer = 0;
+  /** Финал уже прозвучал — гул больше не поднимаем. */
+  private finished = false;
   enabled = false;
 
   /** Включить звук. Вызывать из обработчика клика/нажатия. */
@@ -42,7 +44,7 @@ export class LandingSound {
     this.master.gain.cancelScheduledValues(t);
     this.master.gain.setTargetAtTime(0.9, t, 0.25);
     this.drone.gain.cancelScheduledValues(t);
-    this.drone.gain.setTargetAtTime(0.13, t, 1.5);
+    this.drone.gain.setTargetAtTime(this.finished ? 0 : 0.13, t, 1.5);
   }
 
   disable() {
@@ -280,8 +282,34 @@ export class LandingSound {
         this.tone(f, t + i * 0.07, 0.015, 5.5, 0.045, "sine", 0.75);
         this.tone(f * 2.01, t + i * 0.07, 0.01, 2.2, 0.012, "sine", 0.75);
       });
-      this.drone.gain.setTargetAtTime(0.22, t, 0.4);
-      this.drone.gain.setTargetAtTime(0.11, t + 3, 2);
+      // гул коротко поддерживает аккорд и плавно уходит в тишину (~6 с) — в финале звучит только «колокол»
+      this.finished = true;
+      this.drone.gain.cancelScheduledValues(t);
+      this.drone.gain.setTargetAtTime(0.16, t, 0.4);
+      this.drone.gain.setTargetAtTime(0, t + 1.5, 1.6);
+    }
+
+    if (cue === "depart") {
+      // переход в бортовой компьютер: нарастающий «взлёт» шума + мягкий аккорд, затем всё затихает
+      const dur = 1.6;
+      const n = this.noiseSrc();
+      const bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.Q.value = 1.4;
+      bp.frequency.setValueAtTime(300, t);
+      bp.frequency.exponentialRampToValueAtTime(6000, t + dur);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.28, t + dur * 0.8);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.5);
+      n.connect(bp).connect(g);
+      this.out(g, 0.5);
+      setTimeout(() => n.stop(), (dur + 1) * 1000);
+      [440, 659.3, 880].forEach((f, i) => this.tone(f, t + 0.9 + i * 0.08, 0.02, 1.8, 0.03, "sine", 0.7));
+      this.drone.gain.cancelScheduledValues(t);
+      this.drone.gain.setTargetAtTime(0, t, 0.3);
+      this.master.gain.cancelScheduledValues(t);
+      this.master.gain.setTargetAtTime(0, t + 1.6, 0.35); // к моменту перехода — тишина
     }
   }
 

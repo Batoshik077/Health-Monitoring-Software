@@ -152,6 +152,79 @@ button, a, [role="button"], input[type="range"], select, summary {
   animation: landing-rise 0.8s 0.6s cubic-bezier(0.16, 1, 0.3, 1) both, landing-sound-hint 2.4s 1.4s ease-in-out infinite;
 }
 
+/* Эмблема на финальном экране — мягкое свечение */
+.landing-emblem {
+  box-shadow: 0 0 0 1px rgb(147 197 253 / 0.25), 0 0 28px -4px rgb(59 130 246 / 0.75);
+}
+
+/* ---------- Переход в бортовой компьютер (2.4 с) ---------- */
+@keyframes landing-leave {
+  to { opacity: 0; transform: translateX(-32px); filter: blur(8px); }
+}
+.landing-leave {
+  animation: landing-leave 0.6s cubic-bezier(0.4, 0, 1, 1) forwards;
+  pointer-events: none;
+}
+/* фон затемняется, пока камера «ныряет» к МКС, с короткой вспышкой «прыжка» */
+@keyframes landing-boot-bg {
+  0%, 28% { background-color: rgb(5 7 11 / 0); }
+  52%, 100% { background-color: rgb(5 7 11 / 0.97); }
+}
+@keyframes landing-boot-flash {
+  0%, 30% { opacity: 0; }
+  42% { opacity: 0.55; }
+  60%, 100% { opacity: 0; }
+}
+.landing-boot {
+  animation: landing-boot-bg 2.4s linear forwards;
+}
+.landing-boot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgb(191 219 254 / 0.9), rgb(59 130 246 / 0.25) 35%, transparent 70%);
+  animation: landing-boot-flash 2.4s linear forwards;
+  pointer-events: none;
+}
+@keyframes landing-boot-emblem {
+  from { opacity: 0; transform: scale(0.6); filter: blur(10px); }
+  to { opacity: 1; transform: none; filter: blur(0); }
+}
+.landing-boot-emblem {
+  animation: landing-boot-emblem 0.7s 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.landing-boot-emblem img {
+  box-shadow: 0 0 60px -6px rgb(59 130 246 / 0.8);
+}
+@keyframes landing-boot-ring {
+  from { opacity: 0.8; transform: scale(0.92); }
+  to { opacity: 0; transform: scale(1.35); }
+}
+.landing-boot-ring {
+  animation: landing-boot-ring 1.1s 1.1s ease-out infinite both;
+}
+.landing-boot-line {
+  animation: landing-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes landing-boot-bar {
+  from { width: 0; }
+  to { width: 100%; }
+}
+.landing-boot-bar {
+  animation: landing-boot-bar 1.25s 0.95s cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+
+/* Приложение после перехода с лендинга: плавно «включается» */
+/* fill-mode backwards (не both): после анимации на корне не остаётся transform/filter,
+   иначе они ломали бы position: fixed у бокового меню */
+@keyframes app-boot {
+  from { opacity: 0; transform: scale(1.015); filter: blur(6px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+.app-boot {
+  animation: app-boot 0.7s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
 /* Затемнение под финальным текстом: снизу на узких экранах, слева на широких */
 .landing-scrim {
   background: linear-gradient(0deg, rgb(5 7 11 / 0.92) 0%, rgb(5 7 11 / 0.55) 42%, transparent 62%);
@@ -167,6 +240,7 @@ button, a, [role="button"], input[type="range"], select, summary {
 }
 @media (max-height: 700px) {
   .landing-narrow .landing-eyebrow { font-size: 0.6875rem; letter-spacing: 0.14em; }
+  .landing-narrow .landing-emblem { width: 2.5rem; height: 2.5rem; }
   .landing-narrow .landing-title { font-size: 2.5rem; line-height: 1.1; margin-top: 0.5rem; }
   .landing-narrow .landing-lead { font-size: 0.9375rem; margin-top: 0.75rem; }
   .landing-narrow .landing-pillars { display: none; }

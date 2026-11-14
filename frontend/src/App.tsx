@@ -1,5 +1,5 @@
 import {
-  Bell, Building2, ChevronRight, Columns2, Globe, HeartPulse, Menu, OctagonAlert, Satellite, SlidersHorizontal, Users, X,
+  Bell, Building2, ChevronRight, Columns2, Globe, HeartPulse, Menu, OctagonAlert, SlidersHorizontal, Users, X,
   type LucideIcon,
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -145,9 +145,8 @@ function MissionClock() {
 function Brand() {
   return (
     <Link to="/" className="flex min-h-11 items-center gap-2.5 rounded-xl px-1">
-      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent-strong/20 text-accent">
-        <Satellite aria-hidden className="h-5 w-5" />
-      </span>
+      <img src={`${import.meta.env.BASE_URL}brand/astrohealth-logo-128.png`} alt="" aria-hidden width={36} height={36}
+        className="h-9 w-9 rounded-full" />
       <span className="text-lg font-semibold tracking-tight">AstroHealth</span>
     </Link>
   );
@@ -175,7 +174,8 @@ export function App() {
   }
 
   return (
-    <div className="min-h-dvh hud-grid">
+    // после перехода с лендинга приложение плавно «включается»
+    <div className={`min-h-dvh hud-grid ${(location.state as { fromLanding?: boolean } | null)?.fromLanding ? "app-boot" : ""}`}>
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-xl focus:bg-accent-strong focus:px-4 focus:py-3 focus:text-white">
         Перейти к содержимому
       </a>
