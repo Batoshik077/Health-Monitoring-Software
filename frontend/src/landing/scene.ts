@@ -346,20 +346,36 @@ function makeRadiatorTexture() {
   });
 }
 
-function makeStars(count: number): THREE.Points {
+const MILKY_WAY = new THREE.Vector3(0.35, 1.0, 0.25).normalize(); // нормаль к полосе Млечного Пути (как в SKY_FRAG)
+type StarUniforms = { uTime: { value: number }; uPR: { value: number }; uFade: { value: number } };
+
+/**
+ * Слой звёзд. Слоёв несколько — так фон получается объёмным:
+ *   far  — основное небо «на бесконечности»;
+ *   dust — плотная мелкая звёздная пыль, гуще вдоль Млечного Пути;
+ *   near — звёзды в пространстве вокруг Земли (r 60–170): камера подлетает и облетает станцию,
+ *          и они смещаются относительно дальних — параллакс даёт глубину.
+ *          r ≥ 60 > максимальной дистанции камеры (~46), поэтому звезда никогда не окажется перед Землёй.
+ */
+function makeStars(count: number, uniforms: StarUniforms, o: {
+  rMin: number; rMax: number; size: [number, number]; bright: [number, number]; band?: number;
+}): THREE.Points {
   const pos = new Float32Array(count * 3);
   const col = new Float32Array(count * 3);
   const size = new Float32Array(count);
   const phase = new Float32Array(count);
-  const palette = [new THREE.Color("#ffffff"), new THREE.Color("#dfe8ff"), new THREE.Color("#fff1dc"), new THREE.Color("#c4d6ff")];
+  const palette = [new THREE.Color("#ffffff"), new THREE.Color("#dfe8ff"), new THREE.Color("#fff1dc"), new THREE.Color("#c4d6ff"), new THREE.Color("#ffd9b3")];
   const v = new THREE.Vector3();
   for (let i = 0; i < count; i++) {
-    v.randomDirection().multiplyScalar(220 + Math.random() * 160);
+    // band > 0: часть звёзд прижимаем к полосе Млечного Пути
+    do v.randomDirection();
+    while (o.band && Math.random() < o.band && Math.abs(v.dot(MILKY_WAY)) > 0.22);
+    v.multiplyScalar(o.rMin + Math.random() * (o.rMax - o.rMin));
     pos.set([v.x, v.y, v.z], i * 3);
     const c = palette[Math.floor(Math.random() * palette.length)];
-    const b = 0.35 + Math.pow(Math.random(), 3) * 0.65;
+    const b = o.bright[0] + Math.pow(Math.random(), 3) * (o.bright[1] - o.bright[0]);
     col.set([c.r * b, c.g * b, c.b * b], i * 3);
-    size[i] = 0.9 + Math.pow(Math.random(), 8) * 3.2;
+    size[i] = o.size[0] + Math.pow(Math.random(), 8) * (o.size[1] - o.size[0]);
     phase[i] = Math.random();
   }
   const geo = new THREE.BufferGeometry();
@@ -370,12 +386,57 @@ function makeStars(count: number): THREE.Points {
   const mat = new THREE.ShaderMaterial({
     vertexShader: STAR_VERT,
     fragmentShader: STAR_FRAG,
-    uniforms: { uTime: { value: 0 }, uPR: { value: 1 }, uFade: { value: 0 } },
+    uniforms, // общие для всех слоёв: проявление и мерцание синхронны
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
-  return new THREE.Points(geo, mat);
+  const pts = new THREE.Points(geo, mat);
+  pts.renderOrder = -1;
+  pts.frustumCulled = false;
+  return pts;
+}
+
+/** Текстура яркой звезды: мягкое свечение + тонкие дифракционные лучи. */
+function makeFlareTexture() {
+  return canvasTexture(128, 128, (g) => {
+    const glow = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    glow.addColorStop(0, "rgba(255,255,255,1)");
+    glow.addColorStop(0.08, "rgba(255,255,255,0.85)");
+    glow.addColorStop(0.25, "rgba(200,220,255,0.18)");
+    glow.addColorStop(1, "rgba(200,220,255,0)");
+    g.fillStyle = glow;
+    g.fillRect(0, 0, 128, 128);
+    for (const [w, h] of [[128, 2], [2, 128]]) {
+      const ray = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+      ray.addColorStop(0, "rgba(255,255,255,0.9)");
+      ray.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = ray;
+      g.fillRect(64 - w / 2, 64 - h / 2, w, h);
+    }
+  });
+}
+
+/** Несколько ярких звёзд со свечением и лучами — «опорные» точки неба. */
+function makeBrightStars(count: number, tex: THREE.Texture) {
+  const group = new THREE.Group();
+  const tints = ["#ffffff", "#cfe0ff", "#ffe8c7", "#b9d1ff"];
+  const v = new THREE.Vector3();
+  for (let i = 0; i < count; i++) {
+    v.randomDirection().multiplyScalar(330 + Math.random() * 60);
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, color: tints[i % tints.length], transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, opacity: 0,
+    }));
+    s.position.copy(v);
+    s.scale.setScalar(5 + Math.pow(Math.random(), 2) * 8);
+    s.material.rotation = Math.random() * 0.6 - 0.3;
+    s.userData.phase = Math.random() * 10;
+    s.userData.base = 0.55 + Math.random() * 0.45;
+    s.renderOrder = -1;
+    group.add(s);
+  }
+  return group;
 }
 
 // ---------- «Союз» (размеры в метрах, нос — бытовой отсек — смотрит в +Z) ----------
@@ -590,10 +651,16 @@ export function createLandingScene(host: HTMLElement, opts: SceneOptions): Landi
   const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), skyMat);
   sky.renderOrder = -2;
   scene.add(sky);
-  const stars = makeStars(window.innerWidth < 700 ? 3000 : 6000);
-  stars.renderOrder = -1;
-  scene.add(stars);
-  const starMat = stars.material as THREE.ShaderMaterial;
+  const small = window.innerWidth < 700;
+  const starUniforms: StarUniforms = { uTime: { value: 0 }, uPR: { value: 1 }, uFade: { value: 0 } };
+  const starMat = { uniforms: starUniforms }; // общий доступ к параметрам всех слоёв
+  scene.add(makeStars(small ? 3000 : 6000, starUniforms, { rMin: 220, rMax: 380, size: [1.0, 4.4], bright: [0.45, 1] }));
+  scene.add(makeStars(small ? 4500 : 10000, starUniforms, { rMin: 250, rMax: 420, size: [0.8, 1.5], bright: [0.22, 0.6], band: 0.7 }));
+  scene.add(makeStars(small ? 900 : 1800, starUniforms, { rMin: 60, rMax: 170, size: [1.5, 3.8], bright: [0.6, 1] }));
+  const flareTex = makeFlareTexture();
+  disposables.push(flareTex);
+  const brightStars = makeBrightStars(small ? 24 : 44, flareTex);
+  scene.add(brightStars);
 
   // солнце
   const sun = new THREE.Vector3();
@@ -904,6 +971,11 @@ export function createLandingScene(host: HTMLElement, opts: SceneOptions): Landi
     const fade = ready ? smooth(0, 2, T) : 0;
     starMat.uniforms.uTime.value = T;
     starMat.uniforms.uFade.value = fade;
+    // яркие звёзды медленно «дышат»
+    for (const s of brightStars.children as THREE.Sprite[]) {
+      const tw = 0.8 + 0.2 * Math.sin(T * 0.9 + s.userData.phase);
+      s.material.opacity = fade * s.userData.base * tw;
+    }
     skyMat.uniforms.uFade.value = fade;
 
     // «восход»: свет выходит из-за Земли

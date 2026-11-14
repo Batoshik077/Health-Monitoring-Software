@@ -26,9 +26,11 @@ export function VitalTile({ a, k, history }: { a: Astronaut; k: Key; history?: H
   const { status, note } = tileStatus(a, k);
   const base = a.baseline?.[k];
   return (
-    <div className={`flex flex-col rounded-xl border bg-bg/60 p-4 ${status === "green" ? "border-line" : status === "yellow" ? "border-warn/50" : "border-crit/70"}`}>
+    <div className={`tile flex flex-col rounded-xl border p-4 ${status === "green" ? "border-white/[0.07]" : status === "yellow" ? "border-warn/50" : "border-crit/70"}`}>
       <div className="flex items-center gap-2 text-sm text-muted">
-        <Icon aria-hidden className="h-4 w-4" />
+        {/* сердце бьётся с частотой реального пульса */}
+        <Icon aria-hidden className={`h-4 w-4 ${k === "hr" && !bad && a.vitals.hr ? "heartbeat text-crit/80" : ""}`}
+          style={k === "hr" && !bad && a.vitals.hr ? { animationDuration: `${(60 / Math.max(30, a.vitals.hr)).toFixed(2)}s` } : undefined} />
         <span>{meta.label}</span>
       </div>
       <div className="mt-2 flex items-baseline gap-1.5">

@@ -1,7 +1,6 @@
 import { Clock, Globe, MessageSquare, Send, Satellite } from "lucide-react";
 import { useId, useState } from "react";
 import { AlertRow } from "../components/AlertRow";
-import { LinkBadge } from "../components/LinkBadge";
 import { PageHeader } from "../components/PageHeader";
 import { Button, EmptyState, PageSkeleton, Panel, PanelTitle, StatusPill } from "../components/ui";
 import { api } from "../lib/api";
@@ -9,7 +8,7 @@ import { fmtDur, roleLabel } from "../lib/format";
 import { useSnapshot } from "../lib/snapshot";
 
 /** Mission Control: Земля видит только то, что долетело через канал связи. */
-export function GroundView({ compact = false }: { compact?: boolean }) {
+export function GroundPage() {
   const { ground } = useSnapshot();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -30,29 +29,22 @@ export function GroundView({ compact = false }: { compact?: boolean }) {
     }
   };
 
-  const Title = compact ? "h2" : "h1";
+  // задержка связи показана в боковом меню — здесь её не дублируем, только очередь пакетов
   return (
-    <div className="space-y-5">
-      {compact ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <Title className="text-2xl font-semibold tracking-tight">Mission Control</Title>
-          <LinkBadge link={ground.link} />
-        </div>
-      ) : (
-        <PageHeader eyebrow="Земля" title="Mission Control" actions={<LinkBadge link={ground.link} />}>
-          Земля видит только то, что дошло по каналу связи. В пути: <span className="num text-fg">{ground.link.in_flight}</span> пакетов,
-          в очереди P0/P1/P2: <span className="num text-fg">{q.p0}/{q.p1}/{q.p2}</span>.
-        </PageHeader>
-      )}
+    <div className="page space-y-5">
+      <PageHeader eyebrow="Земля" title="Центр управления полётом">
+        Земля видит только то, что дошло по каналу связи. В пути: <span className="num text-fg">{ground.link.in_flight}</span> пакетов,
+        в очереди P0/P1/P2: <span className="num text-fg">{q.p0}/{q.p1}/{q.p2}</span>.
+      </PageHeader>
 
       {ground.crew.length === 0 ? (
         <Panel><EmptyState icon={Satellite} title="С борта ещё ничего не пришло">Первые данные дойдут через {fmtDur(ground.link.delay_s)}.</EmptyState></Panel>
       ) : (
-        <ul className={`grid gap-4 sm:grid-cols-2 ${compact ? "" : "2xl:grid-cols-4"}`}>
+        <ul className="stagger grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
           {ground.crew.map((c) => {
             const stale = c.age_s > 120;
             return (
-              <li key={c.id} className={`rounded-2xl border bg-surface/90 p-5 ${c.status === "red" ? "border-crit/70" : c.status === "yellow" ? "border-warn/50" : "border-line"}`}>
+              <li key={c.id} className={`card rounded-2xl border p-5 ${c.status === "red" ? "border-crit/70" : c.status === "yellow" ? "border-warn/50" : "border-white/[0.07]"}`}>
                 <div className="flex items-start gap-2">
                   <div className="min-w-0 flex-1">
                     <h3 className="text-lg font-semibold">{c.name ?? c.id}</h3>
@@ -74,16 +66,16 @@ export function GroundView({ compact = false }: { compact?: boolean }) {
         </ul>
       )}
 
-      <div className={`grid gap-5 ${compact ? "" : "xl:grid-cols-2"}`}>
-        <Panel labelledBy={`g-alerts-${compact}`}>
-          <PanelTitle id={`g-alerts-${compact}`} icon={Globe} aside={<span className="text-sm text-muted"><span className="num">{open.length}</span> активных</span>}>
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Panel labelledBy="g-alerts">
+          <PanelTitle id="g-alerts" icon={Globe} aside={<span className="text-sm text-muted"><span className="num">{open.length}</span> активных</span>}>
             Тревоги, известные Земле
           </PanelTitle>
           {ground.alerts.length === 0 ? <EmptyState title="Тревоги до Земли не доходили" /> :
-            <div className="space-y-2">{ground.alerts.slice(0, compact ? 3 : 8).map((a) => <AlertRow key={a.id} alert={a} nowT={ground.t} ground />)}</div>}
+            <div className="space-y-2">{ground.alerts.slice(0, 8).map((a) => <AlertRow key={a.id} alert={a} nowT={ground.t} ground />)}</div>}
         </Panel>
-        <Panel labelledBy={`g-msg-${compact}`}>
-          <PanelTitle id={`g-msg-${compact}`} icon={MessageSquare}>Сообщение экипажу</PanelTitle>
+        <Panel labelledBy="g-msg">
+          <PanelTitle id="g-msg" icon={MessageSquare}>Сообщение экипажу</PanelTitle>
           <form onSubmit={send} className="space-y-2">
             <label htmlFor={inputId} className="block text-sm text-muted">Рекомендация врача</label>
             <div className="flex flex-wrap gap-2">
@@ -111,8 +103,4 @@ export function GroundView({ compact = false }: { compact?: boolean }) {
       </div>
     </div>
   );
-}
-
-export function GroundPage() {
-  return <GroundView />;
 }

@@ -1,5 +1,5 @@
 import { CircleCheck, Inbox, OctagonAlert, TriangleAlert, type LucideIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { statusTone } from "../lib/format";
 import type { Status } from "../lib/types";
 
@@ -27,10 +27,10 @@ export function Panel({ children, status, className = "", pulse = false, as: Tag
   children: ReactNode; status?: Status; className?: string; pulse?: boolean; as?: "section" | "div" | "article";
   labelledBy?: string;
 }) {
-  const border = status && status !== "green" ? statusTone[status].border : "border-line";
+  const border = status && status !== "green" ? statusTone[status].border : "border-white/[0.07]";
   return (
     <Tag aria-labelledby={labelledBy}
-      className={`rounded-2xl border ${border} bg-surface/90 p-5 shadow-[0_1px_0_rgb(255_255_255/0.03)_inset] ${pulse ? "pulse-critical" : ""} ${className}`}>
+      className={`card rounded-2xl border ${border} p-5 ${pulse ? "pulse-critical" : ""} ${className}`}>
       {children}
     </Tag>
   );
@@ -72,7 +72,7 @@ export function Button({ children, onClick, variant = "default", disabled, class
 
 export function EmptyState({ icon: Icon = Inbox, title, children }: { icon?: LucideIcon; title: string; children?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-line px-4 py-8 text-center">
+    <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-white/10 px-4 py-8 text-center">
       <Icon aria-hidden className="h-6 w-6 text-subtle" />
       <p className="text-sm font-medium text-muted">{title}</p>
       {children && <p className="max-w-sm text-sm text-subtle">{children}</p>}
@@ -97,23 +97,49 @@ export function PageSkeleton() {
   );
 }
 
-/** Кольцевой индикатор (gauge) для одного показателя против цели — рекомендация скилла для KPI. */
+const prefersReducedMotion = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** Число плавно «докручивается» до нового значения (при первом показе — от нуля). */
+export function useCountUp(target: number, ms = 900) {
+  const [shown, setShown] = useState(prefersReducedMotion() ? target : 0);
+  const from = useRef(shown);
+  useEffect(() => {
+    if (prefersReducedMotion()) { setShown(target); return; }
+    const start = performance.now();
+    const a = from.current;
+    let raf = 0;
+    const tick = (now: number) => {
+      const k = Math.min(1, (now - start) / ms);
+      const v = a + (target - a) * (1 - Math.pow(1 - k, 3));
+      from.current = v;
+      setShown(v);
+      if (k < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, ms]);
+  return shown;
+}
+
+/** Кольцевой индикатор (gauge) для одного показателя против цели. Кольцо и число анимируются. */
 export function Gauge({ value, max = 100, status, label, size = 112 }: {
   value: number; max?: number; status: Status; label: string; size?: number;
 }) {
   const r = 44;
   const c = 2 * Math.PI * r;
-  const pct = Math.max(0, Math.min(1, value / max));
+  const shown = useCountUp(value);
+  const pct = Math.max(0, Math.min(1, shown / max));
   const color = { green: "var(--color-ok)", yellow: "var(--color-warn)", red: "var(--color-crit)" }[status];
   return (
     <div className="relative" style={{ width: size, height: size }} role="img" aria-label={`${label}: ${value} из ${max}, ${statusTone[status].label.toLowerCase()}`}>
-      <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" aria-hidden>
-        <circle cx="50" cy="50" r={r} fill="none" stroke="var(--color-line)" strokeWidth="8" />
+      <div aria-hidden className="gauge-glow absolute inset-2 rounded-full" style={{ boxShadow: `0 0 32px -6px ${color}` }} />
+      <svg viewBox="0 0 100 100" className="relative h-full w-full -rotate-90" aria-hidden>
+        <circle cx="50" cy="50" r={r} fill="none" stroke="rgb(255 255 255 / 0.07)" strokeWidth="8" />
         <circle cx="50" cy="50" r={r} fill="none" stroke={color} strokeWidth="8" strokeLinecap="round"
-          strokeDasharray={`${c * pct} ${c}`} style={{ transition: "stroke-dasharray 400ms cubic-bezier(0.16,1,0.3,1)" }} />
+          strokeDasharray={`${c * pct} ${c}`} />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center" aria-hidden>
-        <span className="num text-3xl font-semibold leading-none">{value}</span>
+        <span className="num text-3xl font-semibold leading-none">{Math.round(shown)}</span>
         <span className="mt-1 text-xs text-subtle">из {max}</span>
       </div>
     </div>
@@ -136,7 +162,8 @@ export function Sparkline({ values, className = "", status = "green", minSpan = 
     .join(" ");
   const color = { green: "var(--color-accent)", yellow: "var(--color-warn)", red: "var(--color-crit)" }[status];
   return (
-    <svg viewBox="0 0 100 30" preserveAspectRatio="none" className={className} aria-hidden>
+    // spark-reveal: линия плавно раскрывается слева направо при появлении (clip-path)
+    <svg viewBox="0 0 100 30" preserveAspectRatio="none" className={`spark-reveal ${className}`} aria-hidden>
       <polyline points={d} fill="none" stroke={color} strokeWidth="1.75" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
     </svg>
   );
