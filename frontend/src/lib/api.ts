@@ -1,4 +1,8 @@
+import { sim } from "../sim/client";
+import { BROWSER_RUNTIME } from "./runtime";
+
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
+  if (BROWSER_RUNTIME) return sim().request<T>(method, url, body);
   const res = await fetch(url, {
     method,
     headers: body ? { "Content-Type": "application/json" } : undefined,

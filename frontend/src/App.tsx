@@ -6,6 +6,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { LinkBadge } from "./components/LinkBadge";
 import { PageSkeleton } from "./components/ui";
+import { BROWSER_RUNTIME } from "./lib/runtime";
 import { fmtClock } from "./lib/format";
 import { useSnapshot } from "./lib/snapshot";
 import { beep } from "./lib/sound";
@@ -92,12 +93,35 @@ function NavItems({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+/** Браузерный режим (Vercel): Pyodide загружается несколько секунд — показываем, что происходит. */
+function BootNotice() {
+  const { boot, connected } = useSnapshot();
+  if (!BROWSER_RUNTIME || connected || !boot) return null;
+  return (
+    <div role="status" aria-live="polite"
+      className={`mb-6 flex items-start gap-4 rounded-2xl border p-5 ${boot.error ? "border-crit/70 bg-crit/10" : "border-line bg-surface/90"}`}>
+      {!boot.error && <span aria-hidden className="mt-1 h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-line border-t-accent" />}
+      <div>
+        <p className={`font-medium ${boot.error ? "text-crit" : "text-fg"}`}>{boot.error ?? boot.stage}</p>
+        <p className="mt-1 text-sm text-muted">
+          {boot.error
+            ? "Обновите страницу. Нужен современный браузер с поддержкой WebAssembly."
+            : "Бортовая система работает прямо в вашем браузере: Python-код бэкенда запущен через WebAssembly. Первый запуск — 5–15 секунд."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function MissionClock() {
   const { onboard, connected } = useSnapshot();
   return (
     <div className="space-y-2 text-sm">
-      {!connected && (
+      {!connected && !BROWSER_RUNTIME && (
         <p role="status" className="rounded-lg border border-crit/70 bg-crit/10 px-3 py-2 text-crit">Нет соединения с бэкендом</p>
+      )}
+      {!connected && BROWSER_RUNTIME && (
+        <p role="status" className="rounded-lg border border-line bg-surface-2 px-3 py-2 text-muted">Запуск симуляции…</p>
       )}
       {onboard && (
         <>
@@ -169,6 +193,7 @@ export function App() {
       <div className="lg:pl-64">
         <div className="sticky top-14 z-10 lg:top-0"><CriticalBanner /></div>
         <main id="main" ref={main} tabIndex={-1} className="mx-auto max-w-[1400px] px-4 py-6 outline-none sm:px-6 lg:px-8 lg:py-8">
+          <BootNotice />
           <Suspense fallback={<PageSkeleton />}>
             <Routes>
               <Route path="/" element={<Navigate to="/me/a3" replace />} />

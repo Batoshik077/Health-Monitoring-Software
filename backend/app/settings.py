@@ -1,11 +1,15 @@
 """Загрузка конфигов из папки config/ в корне репозитория."""
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import yaml
+try:
+    import yaml
+except ImportError:  # браузерная сборка (Pyodide) — конфиги заранее переведены в JSON
+    yaml = None
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = Path(os.environ.get("ASTRO_CONFIG_DIR", ROOT / "config"))
@@ -13,8 +17,9 @@ DB_PATH = os.environ.get("ASTRO_DB", str(ROOT / "backend" / "astro.db"))
 
 
 def load_yaml(path: Path) -> dict:
+    """YAML-конфиг. Без PyYAML читаем JSON: он является подмножеством YAML."""
     with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        return yaml.safe_load(f) if yaml is not None else json.load(f)
 
 
 @dataclass

@@ -9,3 +9,5 @@ dist/
 .DS_Store
 backend/astro.db
 frontend/dist/
+frontend/public/pyodide/
+frontend/public/sim/
