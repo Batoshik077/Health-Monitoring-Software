@@ -1,13 +1,17 @@
+import { RadioTower, WifiOff } from "lucide-react";
 import { fmtDur } from "../lib/format";
 import type { LinkStatus } from "../lib/types";
 
-export function LinkBadge({ link }: { link: LinkStatus }) {
+export function LinkBadge({ link, compact = false }: { link: LinkStatus; compact?: boolean }) {
   const queued = link.queue.p0 + link.queue.p1 + link.queue.p2;
+  const Icon = link.up ? RadioTower : WifiOff;
   return (
-    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs ${link.up ? "bg-slate-800 text-slate-300" : "bg-rose-950 text-rose-300"}`}>
-      <span className={`h-2 w-2 rounded-full ${link.up ? "bg-emerald-400" : "bg-rose-500"}`} />
-      {link.up ? `Связь с Землёй: задержка ${fmtDur(link.delay_s)}` : "Нет связи с Землёй"}
-      {queued > 0 && <span className="text-slate-500">· в очереди {queued}</span>}
+    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm ${link.up ? "border-line bg-surface-2 text-muted" : "border-crit/70 bg-crit/10 text-crit"}`}>
+      <Icon aria-hidden className="h-4 w-4 shrink-0" />
+      <span>
+        {link.up ? <>Земля: задержка <span className="num text-fg">{fmtDur(link.delay_s)}</span></> : "Нет связи с Землёй"}
+        {!compact && queued > 0 && <span className="text-subtle"> · в очереди <span className="num">{queued}</span></span>}
+      </span>
     </span>
   );
 }

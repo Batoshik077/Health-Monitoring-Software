@@ -14,27 +14,11 @@ export function fmtClock(iso: string): string {
   return iso.slice(11, 16);
 }
 
-export function fmtSimTime(t: number, nowT: number, nowIso: string): string {
-  const d = new Date(new Date(nowIso).getTime() - (nowT - t) * 1000);
-  return d.toISOString().slice(11, 19);
-}
-
-export const statusColor: Record<Status, string> = {
-  green: "bg-emerald-500",
-  yellow: "bg-amber-400",
-  red: "bg-rose-500",
-};
-
-export const statusText: Record<Status, string> = {
-  green: "text-emerald-400",
-  yellow: "text-amber-300",
-  red: "text-rose-400",
-};
-
-export const statusBorder: Record<Status, string> = {
-  green: "border-emerald-500/40",
-  yellow: "border-amber-400/60",
-  red: "border-rose-500",
+/** Токены статуса: цвет всегда дополняется иконкой и текстом (color-not-only). */
+export const statusTone: Record<Status, { text: string; bg: string; border: string; label: string }> = {
+  green: { text: "text-ok", bg: "bg-ok/10", border: "border-ok/40", label: "Норма" },
+  yellow: { text: "text-warn", bg: "bg-warn/10", border: "border-warn/50", label: "Внимание" },
+  red: { text: "text-crit", bg: "bg-crit/10", border: "border-crit/70", label: "Критично" },
 };
 
 export const severityStatus: Record<Severity, Status> = {
@@ -44,9 +28,9 @@ export const severityStatus: Record<Severity, Status> = {
 };
 
 export const severityLabel: Record<Severity, string> = {
-  info: "ИНФО",
-  warning: "ВНИМАНИЕ",
-  critical: "КРИТИЧНО",
+  info: "Инфо",
+  warning: "Внимание",
+  critical: "Критично",
 };
 
 export const roleLabel: Record<string, string> = {
@@ -59,10 +43,12 @@ export const roleLabel: Record<string, string> = {
   protocol: "по протоколу",
 };
 
-export const vitalMeta: Record<string, { label: string; unit: string }> = {
-  hr: { label: "Пульс", unit: "уд/мин" },
-  spo2: { label: "SpO₂", unit: "%" },
-  rr: { label: "Дыхание", unit: "/мин" },
-  sbp: { label: "Давление", unit: "мм рт. ст." },
-  temp: { label: "Температура", unit: "°C" },
+export const vitalMeta: Record<string, { label: string; unit: string; normal: string }> = {
+  hr: { label: "Пульс", unit: "уд/мин", normal: "51–90" },
+  spo2: { label: "SpO₂", unit: "%", normal: "≥ 96" },
+  rr: { label: "Дыхание", unit: "/мин", normal: "12–20" },
+  sbp: { label: "Давление", unit: "мм рт. ст.", normal: "111–219" },
+  temp: { label: "Температура", unit: "°C", normal: "36.1–38.0" },
 };
+
+export const readinessStatus = (r: number): Status => (r >= 70 ? "green" : r >= 50 ? "yellow" : "red");
