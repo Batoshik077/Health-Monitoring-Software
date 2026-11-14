@@ -117,7 +117,7 @@ button, a, [role="button"], input[type="range"], select, summary {
   100% { opacity: 0; transform: translateY(-6px); filter: blur(4px); }
 }
 .landing-caption {
-  animation: landing-caption 2.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: landing-caption 3.25s cubic-bezier(0.16, 1, 0.3, 1) both;
   text-shadow: 0 2px 24px rgb(0 0 0 / 0.8);
 }
 
@@ -152,6 +152,10 @@ button, a, [role="button"], input[type="range"], select, summary {
 }
 
 /* Невысокие узкие экраны (iPhone SE и т.п.): компактный финальный текст, чтобы не наезжал на планету */
+/* Карточки решения на узких экранах влезают только при достаточной высоте (планшеты) */
+@media (max-height: 900px) {
+  .landing-narrow .landing-pillars { display: none; }
+}
 @media (max-height: 700px) {
   .landing-narrow .landing-eyebrow { font-size: 0.6875rem; letter-spacing: 0.14em; }
   .landing-narrow .landing-title { font-size: 2.5rem; line-height: 1.1; margin-top: 0.5rem; }

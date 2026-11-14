@@ -5,12 +5,19 @@ import { createLandingScene, isWideLayout, type LandingScene, type Phase } from 
 
 const readWide = () => isWideLayout(window.innerWidth, window.innerHeight);
 
+// Вступление: проблема → задача → почему решать на борту
 const CAPTIONS: Partial<Record<Phase, string>> = {
-  caption1: "До Марса сигнал идёт до 22 минут в одну сторону",
-  caption2: "Поэтому помощь должна быть на борту",
+  caption1: "Долгие миссии — это радиация, невесомость и изоляция",
+  caption2: "Изменения в организме астронавт должен заметить сам",
+  caption3: "Ответ с Земли идёт до 22 минут — помощь нужна на борту",
 };
 
-const PILLARS = ["Сбор показателей", "Оценка состояния", "Действие сейчас"];
+// Наше решение: собрать → оценить → действовать
+const PILLARS: { title: string; text: string }[] = [
+  { title: "Собирает", text: "пульс, давление, SpO₂, сон, самочувствие и среду корабля" },
+  { title: "Оценивает", text: "цветовой статус по системам организма, тренды и личная норма" },
+  { title: "Подсказывает", text: "пошаговые протоколы и когда звать врача на Земле" },
+];
 
 /** Приветственный экран: 3D-сцена (планета, корабли, космос) и переход в приложение. */
 export function LandingPage() {
@@ -96,7 +103,7 @@ export function LandingPage() {
           <div className={`w-full max-w-2xl ${wide ? "pl-20 pr-10" : "landing-narrow px-6 pb-10 sm:px-10 sm:pb-16"}`}>
             <p className="landing-rise landing-eyebrow font-mono text-xs font-semibold uppercase tracking-[0.2em] text-accent sm:text-sm"
               style={{ animationDelay: "0ms" }}>
-              Бортовая система здоровья экипажа
+              Мониторинг здоровья в долгих миссиях
             </p>
             <h1 id="landing-title"
               className="landing-rise landing-title mt-3 text-5xl font-semibold tracking-tight sm:text-7xl"
@@ -104,12 +111,15 @@ export function LandingPage() {
               AstroHealth
             </h1>
             <p className="landing-rise landing-lead mt-5 max-w-xl text-base text-muted sm:text-lg" style={{ animationDelay: "260ms" }}>
-              Собирает показатели, оценивает состояние и подсказывает, что делать прямо сейчас — не дожидаясь ответа Земли.
+              Бортовой помощник, с которым астронавт сам оценивает своё здоровье и сразу понимает, что делать, — не дожидаясь ответа с Земли.
             </p>
-            <ul className="landing-rise landing-pillars mt-6 flex flex-wrap gap-2" style={{ animationDelay: "380ms" }}>
-              {PILLARS.map((p) => (
-                <li key={p} className="rounded-full border border-white/15 bg-white/5 px-3 py-1 font-mono text-xs text-muted backdrop-blur">
-                  {p}
+            <ul className="landing-rise landing-pillars mt-7 grid gap-3 sm:grid-cols-3" style={{ animationDelay: "380ms" }}>
+              {PILLARS.map((p, i) => (
+                <li key={p.title} className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 backdrop-blur">
+                  <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
+                    {String(i + 1).padStart(2, "0")} · {p.title}
+                  </span>
+                  <span className="mt-1 block text-sm leading-snug text-muted">{p.text}</span>
                 </li>
               ))}
             </ul>
