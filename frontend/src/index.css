@@ -110,6 +110,65 @@ button, a, [role="button"], input[type="range"], select, summary {
   .pulse-critical { box-shadow: 0 0 0 3px rgb(248 113 113 / 0.6); }
 }
 
+/* ---------- Приветственный лендинг ---------- */
+@keyframes landing-caption {
+  0% { opacity: 0; transform: translateY(10px); filter: blur(6px); }
+  15%, 80% { opacity: 1; transform: none; filter: blur(0); }
+  100% { opacity: 0; transform: translateY(-6px); filter: blur(4px); }
+}
+.landing-caption {
+  animation: landing-caption 2.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+  text-shadow: 0 2px 24px rgb(0 0 0 / 0.8);
+}
+
+@keyframes landing-rise {
+  from { opacity: 0; transform: translateY(18px); filter: blur(8px); }
+  to { opacity: 1; transform: none; filter: blur(0); }
+}
+.landing-rise {
+  animation: landing-rise 1.1s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.landing-title {
+  background: linear-gradient(180deg, #ffffff 30%, #9cc3ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.landing-cta {
+  box-shadow: 0 0 0 1px rgb(147 197 253 / 0.35), 0 10px 40px -8px rgb(37 99 235 / 0.85);
+}
+.landing-cta:hover {
+  box-shadow: 0 0 0 1px rgb(147 197 253 / 0.6), 0 12px 56px -6px rgb(59 130 246 / 0.95);
+}
+
+/* Затемнение под финальным текстом: снизу на узких экранах, слева на широких */
+.landing-scrim {
+  background: linear-gradient(0deg, rgb(5 7 11 / 0.92) 0%, rgb(5 7 11 / 0.55) 42%, transparent 62%);
+}
+.landing-scrim-wide {
+  background: linear-gradient(90deg, rgb(5 7 11 / 0.88) 0%, rgb(5 7 11 / 0.45) 38%, transparent 62%);
+}
+
+/* Невысокие узкие экраны (iPhone SE и т.п.): компактный финальный текст, чтобы не наезжал на планету */
+@media (max-height: 700px) {
+  .landing-narrow .landing-eyebrow { font-size: 0.6875rem; letter-spacing: 0.14em; }
+  .landing-narrow .landing-title { font-size: 2.5rem; line-height: 1.1; margin-top: 0.5rem; }
+  .landing-narrow .landing-lead { font-size: 0.9375rem; margin-top: 0.75rem; }
+  .landing-narrow .landing-pillars { display: none; }
+  .landing-narrow .landing-cta-wrap { margin-top: 1.5rem; }
+}
+
+/* Запасной фон, если WebGL недоступен */
+.landing-fallback {
+  background:
+    radial-gradient(circle at 72% 45%, #2b6cb0 0, #0b2a5b 14%, transparent 15%),
+    radial-gradient(circle at 72% 45%, rgb(96 165 250 / 0.35) 0, transparent 22%),
+    radial-gradient(ellipse at 30% 20%, rgb(88 28 135 / 0.35), transparent 50%),
+    #05070b;
+}
+
 /* Ползунки опросника: крупная зона нажатия */
 input[type="range"] {
   accent-color: var(--color-accent);

@@ -1,0 +1,119 @@
+import { ArrowRight, Satellite } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { createLandingScene, isWideLayout, type LandingScene, type Phase } from "../landing/scene";
+
+const readWide = () => isWideLayout(window.innerWidth, window.innerHeight);
+
+const CAPTIONS: Partial<Record<Phase, string>> = {
+  caption1: "До Марса сигнал идёт до 22 минут в одну сторону",
+  caption2: "Поэтому помощь должна быть на борту",
+};
+
+const PILLARS = ["Сбор показателей", "Оценка состояния", "Действие сейчас"];
+
+/** Приветственный экран: 3D-сцена (планета, корабли, космос) и переход в приложение. */
+export function LandingPage() {
+  const host = useRef<HTMLDivElement>(null);
+  const scene = useRef<LandingScene | null>(null);
+  const [phase, setPhase] = useState<Phase | "boot">("boot");
+  const [noWebGL, setNoWebGL] = useState(false);
+  const [wide, setWide] = useState(readWide);
+  const final = phase === "final";
+
+  useEffect(() => {
+    const onResize = () => setWide(readWide());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
+    const prevTitle = document.title;
+    document.title = "AstroHealth — бортовая система здоровья экипажа";
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const startAt = Number(new URLSearchParams(window.location.search).get("t")) || 0;
+    try {
+      scene.current = createLandingScene(host.current!, { reducedMotion, startAt, onPhase: setPhase });
+    } catch {
+      setNoWebGL(true);
+      setPhase("final");
+    }
+    return () => {
+      scene.current?.dispose();
+      scene.current = null;
+      document.title = prevTitle;
+    };
+  }, []);
+
+  const caption = CAPTIONS[phase as Phase];
+
+  return (
+    <div className="relative h-dvh w-full overflow-hidden bg-[#05070b] text-fg">
+      <div ref={host} aria-hidden className="absolute inset-0" />
+      {noWebGL && <div aria-hidden className="landing-fallback absolute inset-0" />}
+
+      {/* затемнение под текстом финального экрана — для контраста */}
+      <div aria-hidden
+        className={`pointer-events-none absolute inset-0 transition-opacity duration-[1600ms] ${wide ? "landing-scrim-wide" : "landing-scrim"} ${final ? "opacity-100" : "opacity-0"}`} />
+
+      <header className="absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-4 px-4 py-4 sm:px-8 sm:py-6">
+        <span className="flex items-center gap-2.5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent-strong/25 text-accent backdrop-blur">
+            <Satellite aria-hidden className="h-5 w-5" />
+          </span>
+          <span className="text-lg font-semibold tracking-tight">AstroHealth</span>
+        </span>
+        {!final && (
+          <button type="button" onClick={() => scene.current?.skip()}
+            className="min-h-11 rounded-xl border border-white/20 bg-black/30 px-4 text-sm text-muted backdrop-blur transition-colors hover:border-white/40 hover:text-fg">
+            Пропустить
+          </button>
+        )}
+      </header>
+
+      {/* подписи вступления */}
+      <div aria-live="polite" className="pointer-events-none absolute inset-x-0 bottom-[16%] z-10 flex justify-center px-6">
+        {caption && !final && (
+          <p key={phase} className="landing-caption max-w-2xl text-center text-xl font-light tracking-wide text-fg/90 sm:text-3xl">
+            {caption}
+          </p>
+        )}
+      </div>
+
+      {/* финальный экран */}
+      {final && (
+        <section aria-labelledby="landing-title"
+          className={`absolute inset-0 z-10 flex ${wide ? "items-center" : "items-end"}`}>
+          <div className={`w-full max-w-2xl ${wide ? "pl-20 pr-10" : "landing-narrow px-6 pb-10 sm:px-10 sm:pb-16"}`}>
+            <p className="landing-rise landing-eyebrow font-mono text-xs font-semibold uppercase tracking-[0.2em] text-accent sm:text-sm"
+              style={{ animationDelay: "0ms" }}>
+              Бортовая система здоровья экипажа
+            </p>
+            <h1 id="landing-title"
+              className="landing-rise landing-title mt-3 text-5xl font-semibold tracking-tight sm:text-7xl"
+              style={{ animationDelay: "120ms" }}>
+              AstroHealth
+            </h1>
+            <p className="landing-rise landing-lead mt-5 max-w-xl text-base text-muted sm:text-lg" style={{ animationDelay: "260ms" }}>
+              Собирает показатели, оценивает состояние и подсказывает, что делать прямо сейчас — не дожидаясь ответа Земли.
+            </p>
+            <ul className="landing-rise landing-pillars mt-6 flex flex-wrap gap-2" style={{ animationDelay: "380ms" }}>
+              {PILLARS.map((p) => (
+                <li key={p} className="rounded-full border border-white/15 bg-white/5 px-3 py-1 font-mono text-xs text-muted backdrop-blur">
+                  {p}
+                </li>
+              ))}
+            </ul>
+            <div className="landing-rise landing-cta-wrap mt-9" style={{ animationDelay: "520ms" }}>
+              <Link to="/me/a3"
+                className="landing-cta group inline-flex min-h-14 items-center gap-3 rounded-2xl bg-accent-strong px-7 text-lg font-semibold text-white transition-[background-color,box-shadow] hover:bg-[#1d4ed8]">
+                Перейти к проекту
+                <ArrowRight aria-hidden className="h-5 w-5 transition-transform group-hover:translate-x-1" />
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}

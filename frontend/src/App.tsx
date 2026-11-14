@@ -22,6 +22,8 @@ import { MePage } from "./pages/MePage";
 const AstronautPage = lazy(() => import("./pages/AstronautPage").then((m) => ({ default: m.AstronautPage })));
 const DemoPage = lazy(() => import("./pages/DemoPage").then((m) => ({ default: m.DemoPage })));
 const DirectorPage = lazy(() => import("./pages/DirectorPage").then((m) => ({ default: m.DirectorPage })));
+// Лендинг с three.js — отдельным чанком, чтобы не утяжелять экраны приложения
+const LandingPage = lazy(() => import("./pages/LandingPage").then((m) => ({ default: m.LandingPage })));
 
 const NAV: { to: string; label: string; icon: LucideIcon; group: "crew" | "ops" }[] = [
   { to: "/me/a3", label: "Моё здоровье", icon: HeartPulse, group: "crew" },
@@ -162,6 +164,15 @@ export function App() {
     if (first.current) { first.current = false; return; }
     main.current?.focus({ preventScroll: false });
   }, [location.pathname]);
+
+  // Приветственный лендинг — на весь экран, без меню приложения
+  if (location.pathname === "/") {
+    return (
+      <Suspense fallback={<div className="h-dvh bg-[#05070b]" />}>
+        <LandingPage />
+      </Suspense>
+    );
+  }
 
   return (
     <div className="min-h-dvh hud-grid">
