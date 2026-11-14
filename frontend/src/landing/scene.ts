@@ -1,15 +1,22 @@
 /**
- * 3D-сцена приветственного лендинга: процедурная планета, корабли, выходящие из варпа, звёзды и туманность.
- * Чистый three.js без текстур-файлов — всё генерируется шейдерами, поэтому чанк лёгкий и работает офлайн.
+ * 3D-сцена приветственного лендинга: реалистичная Земля, МКС и корабли «Союз».
  *
- * Время сцены T (секунды):
- *   0–5   камера подлетает, звёзды проявляются, свет «восходит» из-за планеты
- *   3–6   корабли по очереди выходят из варпа и ложатся на орбиты
- *   ≥7.2  финальный кадр: планета смещается, освобождая место под текст
+ * Ассеты (frontend/public/landing/):
+ *   earth_day / earth_night / earth_bump_roughness_clouds — текстуры Земли © Solar System Scope, CC BY 4.0
+ *     (взяты из примеров three.js; каналы третьей: R — рельеф, G — суша/океан, B — облака)
+ *   iss.glb — модель МКС из NASA 3D Resources (свободное использование)
+ * «Союз» строится процедурно по фотографиям — без внешних файлов.
+ *
+ * Время сцены T (секунды, идёт после загрузки ассетов):
+ *   0–5   камера подлетает, свет «восходит» из-за Земли
+ *   2.6–7 МКС и «Союзы» прилетают и тормозят на орбитах
+ *   ≥7.2  финальный кадр: Земля смещается, освобождая место под текст
  */
 import * as THREE from "three";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-export type Phase = "caption1" | "caption2" | "final";
+export type Phase = "ready" | "caption1" | "caption2" | "final";
 
 export interface SceneOptions {
   reducedMotion: boolean;
@@ -28,136 +35,97 @@ export const isWideLayout = (w: number, h: number) => w >= 1024 && w / h > 1.2;
 
 const PHASES: [number, Phase][] = [[1.4, "caption1"], [4.4, "caption2"], [7.2, "final"]];
 const FINAL_T = 7.2;
-const PLANET_R = 2.6;
+const EARTH_R = 2.6;
+const ASSETS = `${import.meta.env.BASE_URL}landing/`;
 
-// ---------- GLSL: 3D simplex noise (Ashima Arts / Stefan Gustavson, MIT) + fbm ----------
-const NOISE = /* glsl */ `
-vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
-vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
-vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
-vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
-float snoise(vec3 v){
-  const vec2 C=vec2(1.0/6.0,1.0/3.0);
-  const vec4 D=vec4(0.0,0.5,1.0,2.0);
-  vec3 i=floor(v+dot(v,C.yyy));
-  vec3 x0=v-i+dot(i,C.xxx);
-  vec3 g=step(x0.yzx,x0.xyz);
-  vec3 l=1.0-g;
-  vec3 i1=min(g.xyz,l.zxy);
-  vec3 i2=max(g.xyz,l.zxy);
-  vec3 x1=x0-i1+C.xxx;
-  vec3 x2=x0-i2+C.yyy;
-  vec3 x3=x0-D.yyy;
-  i=mod289(i);
-  vec4 p=permute(permute(permute(
-      i.z+vec4(0.0,i1.z,i2.z,1.0))
-    + i.y+vec4(0.0,i1.y,i2.y,1.0))
-    + i.x+vec4(0.0,i1.x,i2.x,1.0));
-  float n_=0.142857142857;
-  vec3 ns=n_*D.wyz-D.xzx;
-  vec4 j=p-49.0*floor(p*ns.z*ns.z);
-  vec4 x_=floor(j*ns.z);
-  vec4 y_=floor(j-7.0*x_);
-  vec4 x=x_*ns.x+ns.yyyy;
-  vec4 y=y_*ns.x+ns.yyyy;
-  vec4 h=1.0-abs(x)-abs(y);
-  vec4 b0=vec4(x.xy,y.xy);
-  vec4 b1=vec4(x.zw,y.zw);
-  vec4 s0=floor(b0)*2.0+1.0;
-  vec4 s1=floor(b1)*2.0+1.0;
-  vec4 sh=-step(h,vec4(0.0));
-  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy;
-  vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
-  vec3 p0=vec3(a0.xy,h.x);
-  vec3 p1=vec3(a0.zw,h.y);
-  vec3 p2=vec3(a1.xy,h.z);
-  vec3 p3=vec3(a1.zw,h.w);
-  vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
-  p0*=norm.x;p1*=norm.y;p2*=norm.z;p3*=norm.w;
-  vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0);
-  m=m*m;
-  return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
-}
-float fbm(vec3 p){
-  float f=0.0,a=0.5;
-  for(int i=0;i<5;i++){f+=a*snoise(p);p*=2.03;a*=0.5;}
-  return f;
-}
-`;
-
-const SPHERE_VERT = /* glsl */ `
-varying vec3 vObj;
+// ---------- шейдеры Земли ----------
+const EARTH_VERT = /* glsl */ `
+varying vec2 vUv;
 varying vec3 vNormalW;
-varying vec3 vViewDir;
+varying vec3 vPosW;
 void main(){
-  vObj = position;
+  vUv = uv;
   vec4 wp = modelMatrix * vec4(position, 1.0);
+  vPosW = wp.xyz;
   vNormalW = normalize(mat3(modelMatrix) * normal);
-  vViewDir = normalize(cameraPosition - wp.xyz);
   gl_Position = projectionMatrix * viewMatrix * wp;
 }
 `;
 
-const PLANET_FRAG = /* glsl */ `
+const EARTH_FRAG = /* glsl */ `
+uniform sampler2D uDay;
+uniform sampler2D uNight;
+uniform sampler2D uBRC;
 uniform vec3 uSun;
 uniform float uLight;
-varying vec3 vObj;
+varying vec2 vUv;
 varying vec3 vNormalW;
-varying vec3 vViewDir;
-${NOISE}
+varying vec3 vPosW;
+
+// bump-мэппинг по производным экрана (как perturbNormalArb в three.js)
+vec3 perturb(vec3 p, vec3 n, vec2 dH){
+  vec3 sx = dFdx(p), sy = dFdy(p);
+  vec3 r1 = cross(sy, n), r2 = cross(n, sx);
+  float det = dot(sx, r1);
+  vec3 g = sign(det) * (dH.x * r1 + dH.y * r2);
+  return normalize(abs(det) * n - g);
+}
+
 void main(){
-  vec3 p = normalize(vObj);
-  float h = fbm(p*1.6 + vec3(1.7,0.0,4.2)) + 0.18*fbm(p*5.0);
-  float lat = abs(p.y);
+  vec3 v = normalize(cameraPosition - vPosW);
+  vec3 n0 = normalize(vNormalW);
+  vec3 brc = texture2D(uBRC, vUv).rgb;
+  float h = brc.r;
+  vec3 n = perturb(vPosW, n0, vec2(dFdx(h), dFdy(h)) * 0.011);
 
-  float land = smoothstep(0.03, 0.06, h);
-  vec3 ocean = mix(vec3(0.015,0.06,0.17), vec3(0.04,0.24,0.46), smoothstep(-0.3, 0.05, h));
-  vec3 ground = mix(vec3(0.62,0.56,0.40), vec3(0.15,0.34,0.13), smoothstep(0.045, 0.085, h));
-  ground = mix(ground, vec3(0.46,0.36,0.22), smoothstep(0.18, 0.32, h) * (1.0 - lat));
-  ground = mix(ground, vec3(0.36,0.32,0.30), smoothstep(0.32, 0.46, h));
-  vec3 col = mix(ocean, ground, land);
+  vec3 day = texture2D(uDay, vUv).rgb;
+  vec3 night = texture2D(uNight, vUv).rgb;
+  float land = brc.g;
 
-  float ice = smoothstep(0.78, 0.86, lat + 0.08*fbm(p*4.0));
-  col = mix(col, vec3(0.9,0.94,1.0), ice);
-
-  vec3 n = normalize(vNormalW);
   float ndl = dot(n, uSun);
+  float ndl0 = dot(n0, uSun);
   float diff = max(ndl, 0.0);
-  float day = smoothstep(-0.12, 0.25, ndl);
-  vec3 lit = col * (0.025 + diff * 1.15 * uLight);
+  float dayMix = smoothstep(-0.18, 0.3, ndl0);
 
-  // блик солнца на океане
-  vec3 hv = normalize(uSun + vViewDir);
-  float spec = pow(max(dot(n, hv), 0.0), 60.0) * (1.0 - land) * (1.0 - ice) * uLight;
-  lit += vec3(1.0, 0.92, 0.8) * spec * 0.55;
+  vec3 col = day * diff * 2.4 * uLight;
+
+  // блик Солнца на океане
+  vec3 hv = normalize(uSun + v);
+  float spec = pow(max(dot(n0, hv), 0.0), 160.0) * (1.0 - land) * step(0.0, ndl0);
+  col += vec3(1.0, 0.86, 0.68) * spec * 0.8 * uLight;
 
   // огни городов на ночной стороне
-  float cluster = smoothstep(0.0, 0.35, fbm(p*3.0 + 9.0));
-  float city = smoothstep(0.62, 0.9, snoise(p*42.0)*0.5 + 0.5) * cluster * land * (1.0 - ice);
-  lit += vec3(1.0, 0.68, 0.32) * city * (1.0 - day) * 0.95;
+  col += night * vec3(1.0, 0.82, 0.55) * (1.0 - dayMix) * 2.2;
 
-  // атмосферный ободок
-  float fres = pow(1.0 - max(dot(n, vViewDir), 0.0), 3.0);
-  lit += vec3(0.3, 0.6, 1.0) * fres * (0.08 + 0.92*day) * uLight * 0.9;
+  // атмосфера: голубая дымка к краю диска и тёплая полоса на терминаторе
+  float fres = pow(1.0 - max(dot(n0, v), 0.0), 2.4);
+  vec3 atmo = vec3(0.28, 0.55, 1.0);
+  col = mix(col, atmo * (0.15 + 1.6 * max(ndl0, 0.0)) * uLight, fres * smoothstep(-0.25, 0.5, ndl0) * 0.9);
+  float term = 1.0 - smoothstep(0.0, 0.12, abs(ndl0 + 0.03));
+  col += vec3(0.9, 0.35, 0.12) * term * fres * 0.1 * uLight;
 
-  gl_FragColor = vec4(lit, 1.0);
+  gl_FragColor = vec4(col, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }
 `;
 
 const CLOUD_FRAG = /* glsl */ `
+uniform sampler2D uBRC;
 uniform vec3 uSun;
 uniform float uLight;
-varying vec3 vObj;
+varying vec2 vUv;
 varying vec3 vNormalW;
-varying vec3 vViewDir;
-${NOISE}
+varying vec3 vPosW;
 void main(){
-  vec3 p = normalize(vObj);
-  float c = fbm(p*2.6 + vec3(0.0, 3.0, 0.0)) + 0.3*fbm(p*9.0);
-  float a = smoothstep(0.08, 0.5, c) * 0.8;
-  float diff = max(dot(normalize(vNormalW), uSun), 0.0);
-  vec3 col = vec3(1.0) * (0.03 + diff * 1.1 * uLight);
-  gl_FragColor = vec4(col, a);
+  vec3 n = normalize(vNormalW);
+  float c = smoothstep(0.18, 0.95, texture2D(uBRC, vUv).b);
+  float ndl = dot(n, uSun);
+  float lit = smoothstep(-0.15, 0.45, ndl);
+  vec3 col = vec3(1.0) * (max(ndl, 0.0) * 2.3 + 0.015) * uLight;
+  gl_FragColor = vec4(col, c * mix(0.25, 0.95, lit));
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }
 `;
 
@@ -178,12 +146,13 @@ varying vec3 vNormalV;
 varying vec3 vNormalW;
 void main(){
   float x = clamp(-vNormalV.z, 0.0, 1.0);
-  float a = pow(smoothstep(0.0, 0.6, x), 2.2);
-  float f = 0.2 + 0.8 * smoothstep(-0.4, 0.6, dot(normalize(vNormalW), uSun));
-  gl_FragColor = vec4(vec3(0.3, 0.6, 1.0) * a * f * uLight * 1.3, 1.0);
+  float a = pow(smoothstep(0.0, 0.62, x), 2.6);
+  float f = 0.08 + 0.92 * smoothstep(-0.35, 0.55, dot(normalize(vNormalW), uSun));
+  gl_FragColor = vec4(vec3(0.32, 0.6, 1.0) * a * f * uLight * 1.1, 1.0);
 }
 `;
 
+// ---------- звёзды и фон ----------
 const STAR_VERT = /* glsl */ `
 attribute float aSize;
 attribute float aPhase;
@@ -195,10 +164,10 @@ varying vec3 vColor;
 varying float vAlpha;
 void main(){
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  float tw = 0.7 + 0.3 * sin(uTime * (0.6 + aPhase * 1.8) + aPhase * 20.0);
+  float tw = 0.75 + 0.25 * sin(uTime * (0.5 + aPhase * 1.5) + aPhase * 20.0);
   vColor = aColor;
   vAlpha = tw * uFade;
-  gl_PointSize = aSize * uPR * (0.85 + 0.15 * tw);
+  gl_PointSize = aSize * uPR;
 }
 `;
 
@@ -212,7 +181,7 @@ void main(){
 }
 `;
 
-const NEBULA_VERT = /* glsl */ `
+const SKY_VERT = /* glsl */ `
 varying vec3 vDir;
 void main(){
   vDir = normalize(position);
@@ -220,20 +189,36 @@ void main(){
 }
 `;
 
-const NEBULA_FRAG = /* glsl */ `
+// Едва заметная полоса Млечного Пути — без «мультяшной» туманности
+const SKY_FRAG = /* glsl */ `
 uniform float uFade;
 varying vec3 vDir;
-${NOISE}
+float hash(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+float vnoise(vec3 p){
+  vec3 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+  return mix(mix(mix(hash(i), hash(i+vec3(1,0,0)), f.x), mix(hash(i+vec3(0,1,0)), hash(i+vec3(1,1,0)), f.x), f.y),
+             mix(mix(hash(i+vec3(0,0,1)), hash(i+vec3(1,0,1)), f.x), mix(hash(i+vec3(0,1,1)), hash(i+vec3(1,1,1)), f.x), f.y), f.z);
+}
 void main(){
   vec3 d = normalize(vDir);
-  float n1 = fbm(d*2.2);
-  float n2 = fbm(d*4.0 + vec3(5.0));
-  vec3 c = vec3(0.012, 0.016, 0.026);
-  c += vec3(0.20, 0.07, 0.34) * smoothstep(0.0, 0.8, n1) * 0.5;
-  c += vec3(0.02, 0.16, 0.28) * smoothstep(0.1, 0.9, n2) * 0.45;
-  float band = exp(-pow(dot(d, normalize(vec3(0.35, 1.0, 0.25))) * 3.2, 2.0));
-  c += vec3(0.11, 0.11, 0.19) * band * (0.35 + 0.65 * smoothstep(-0.2, 0.6, n2));
+  float band = exp(-pow(dot(d, normalize(vec3(0.35, 1.0, 0.25))) * 3.6, 2.0));
+  float n = vnoise(d * 6.0) * 0.6 + vnoise(d * 14.0) * 0.4;
+  vec3 c = vec3(0.07, 0.075, 0.1) * band * (0.35 + 0.65 * n);
   gl_FragColor = vec4(c * uFade, 1.0);
+}
+`;
+
+// Окружение для отражений на металле: Земля снизу, чёрный космос, яркое Солнце
+const ENV_FRAG = /* glsl */ `
+uniform vec3 uSun;
+varying vec3 vDir;
+void main(){
+  vec3 d = normalize(vDir);
+  float earth = smoothstep(0.02, 0.3, -d.y);
+  vec3 c = mix(vec3(0.0), vec3(0.05, 0.12, 0.26), earth);
+  c += vec3(0.3, 0.5, 0.9) * exp(-pow((d.y + 0.04) * 14.0, 2.0)) * 0.5;
+  c += vec3(1.0, 0.96, 0.9) * pow(max(dot(d, uSun), 0.0), 600.0) * 60.0;
+  gl_FragColor = vec4(c, 1.0);
 }
 `;
 
@@ -245,20 +230,101 @@ const smooth = (a: number, b: number, x: number) => {
 };
 const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
-function makeGlowTexture(): THREE.Texture {
+function canvasTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void, srgb = true) {
   const c = document.createElement("canvas");
-  c.width = c.height = 128;
+  c.width = w;
+  c.height = h;
+  draw(c.getContext("2d")!);
+  const t = new THREE.CanvasTexture(c);
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 4;
+  return t;
+}
+
+function makeGlowTexture() {
+  return canvasTexture(128, 128, (g) => {
+    const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0, "rgba(255,255,255,1)");
+    grad.addColorStop(0.2, "rgba(255,255,255,0.6)");
+    grad.addColorStop(0.5, "rgba(255,255,255,0.12)");
+    grad.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 128, 128);
+  });
+}
+
+/** Ячейки солнечной батареи: тёмно-синие элементы с серебристыми шинами. */
+function makeSolarTexture() {
+  return canvasTexture(256, 256, (g) => {
+    g.fillStyle = "#b9bec6";
+    g.fillRect(0, 0, 256, 256);
+    const n = 8, s = 256 / n;
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        const grad = g.createLinearGradient(x * s, y * s, (x + 1) * s, (y + 1) * s);
+        const k = 0.85 + Math.random() * 0.3;
+        grad.addColorStop(0, `rgb(${18 * k},${34 * k},${78 * k})`);
+        grad.addColorStop(1, `rgb(${10 * k},${22 * k},${56 * k})`);
+        g.fillStyle = grad;
+        g.fillRect(x * s + 1.5, y * s + 1.5, s - 3, s - 3);
+        g.fillStyle = "rgba(190,200,215,0.18)";
+        g.fillRect(x * s + 1.5, y * s + s / 2, s - 3, 1);
+      }
+    }
+  });
+}
+
+/** Карта нормалей «мятой» термоизоляционной плёнки (ЭВТИ). */
+function makeFoilNormal() {
+  const W = 256;
+  const c = document.createElement("canvas");
+  c.width = c.height = W;
   const g = c.getContext("2d")!;
-  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  grad.addColorStop(0, "rgba(255,255,255,1)");
-  grad.addColorStop(0.18, "rgba(255,255,255,0.75)");
-  grad.addColorStop(0.45, "rgba(255,255,255,0.18)");
-  grad.addColorStop(1, "rgba(255,255,255,0)");
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 128, 128);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+  g.fillStyle = "#808080";
+  g.fillRect(0, 0, W, W);
+  for (let i = 0; i < 900; i++) {
+    const v = Math.floor(80 + Math.random() * 100);
+    g.fillStyle = `rgba(${v},${v},${v},0.35)`;
+    g.beginPath();
+    const x = Math.random() * W, y = Math.random() * W, r = 6 + Math.random() * 26;
+    for (let k = 0; k < 3; k++) {
+      const a = Math.random() * Math.PI * 2;
+      const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+      if (k === 0) g.moveTo(px, py); else g.lineTo(px, py);
+    }
+    g.closePath();
+    g.fill();
+  }
+  const src = g.getImageData(0, 0, W, W).data;
+  const out = g.createImageData(W, W);
+  const H = (x: number, y: number) => src[(((y + W) % W) * W + ((x + W) % W)) * 4] / 255;
+  for (let y = 0; y < W; y++) {
+    for (let x = 0; x < W; x++) {
+      const dx = (H(x + 1, y) - H(x - 1, y)) * 3;
+      const dy = (H(x, y + 1) - H(x, y - 1)) * 3;
+      const l = Math.hypot(dx, dy, 1);
+      out.data.set([((-dx / l) * 0.5 + 0.5) * 255, ((-dy / l) * 0.5 + 0.5) * 255, (1 / l * 0.5 + 0.5) * 255, 255], (y * W + x) * 4);
+    }
+  }
+  g.putImageData(out, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+/** Полосы радиаторов приборного отсека «Союза». */
+function makeRadiatorTexture() {
+  return canvasTexture(256, 64, (g) => {
+    g.fillStyle = "#dcdcd6";
+    g.fillRect(0, 0, 256, 64);
+    for (let x = 0; x < 256; x += 16) {
+      g.fillStyle = "#9da1a3";
+      g.fillRect(x, 0, 2, 64);
+    }
+    g.fillStyle = "rgba(0,0,0,0.08)";
+    g.fillRect(0, 28, 256, 3);
+  });
 }
 
 function makeStars(count: number): THREE.Points {
@@ -266,14 +332,15 @@ function makeStars(count: number): THREE.Points {
   const col = new Float32Array(count * 3);
   const size = new Float32Array(count);
   const phase = new Float32Array(count);
-  const palette = [new THREE.Color("#ffffff"), new THREE.Color("#cfe0ff"), new THREE.Color("#ffe6c4"), new THREE.Color("#a9c8ff")];
+  const palette = [new THREE.Color("#ffffff"), new THREE.Color("#dfe8ff"), new THREE.Color("#fff1dc"), new THREE.Color("#c4d6ff")];
   const v = new THREE.Vector3();
   for (let i = 0; i < count; i++) {
     v.randomDirection().multiplyScalar(220 + Math.random() * 160);
     pos.set([v.x, v.y, v.z], i * 3);
     const c = palette[Math.floor(Math.random() * palette.length)];
-    col.set([c.r, c.g, c.b], i * 3);
-    size[i] = 0.8 + Math.pow(Math.random(), 7) * 3.8;
+    const b = 0.35 + Math.pow(Math.random(), 3) * 0.65;
+    col.set([c.r * b, c.g * b, c.b * b], i * 3);
+    size[i] = 0.9 + Math.pow(Math.random(), 8) * 3.2;
     phase[i] = Math.random();
   }
   const geo = new THREE.BufferGeometry();
@@ -292,232 +359,342 @@ function makeStars(count: number): THREE.Points {
   return new THREE.Points(geo, mat);
 }
 
-// ---------- корабли ----------
-interface ShipSpec {
-  radius: number;
-  tilt: [number, number, number];
-  omega: number;        // угловая скорость по орбите, рад/с (знак = направление)
-  arriveAngle: number;  // где на орбите корабль «встаёт» после варпа
-  start: number;        // момент выхода из варпа, с
-  color: string;
-  from: [number, number, number]; // откуда прилетает (направление из глубины кадра)
+// ---------- «Союз» (размеры в метрах, нос — бытовой отсек — смотрит в +Z) ----------
+interface CraftTextures { solar: THREE.Texture; foil: THREE.Texture; radiator: THREE.Texture; glow: THREE.Texture }
+
+function lathe(profile: number[][], mat: THREE.Material, segments = 48) {
+  const geo = new THREE.LatheGeometry(profile.map(([r, z]) => new THREE.Vector2(r, z)), segments);
+  geo.rotateX(Math.PI / 2); // ось вращения Y → Z
+  return new THREE.Mesh(geo, mat);
 }
 
-const SHIPS: ShipSpec[] = [
-  { radius: 4.3, tilt: [0.28, 0, 0.12], omega: 0.3, arriveAngle: 1.9, start: 3.0, color: "#60a5fa", from: [-1.0, 0.35, -1.0] },
-  { radius: 5.3, tilt: [-0.32, 0, -0.22], omega: -0.22, arriveAngle: 1.2, start: 3.55, color: "#fbbf24", from: [1.0, 0.5, -0.9] },
-  { radius: 4.8, tilt: [0.62, 0, 0.3], omega: 0.26, arriveAngle: 2.3, start: 4.1, color: "#4ade80", from: [-0.6, -0.6, -1.0] },
-  { radius: 6.1, tilt: [0.12, 0, -0.45], omega: -0.17, arriveAngle: 0.9, start: 4.65, color: "#e879f9", from: [0.8, -0.3, -1.0] },
-  { radius: 5.7, tilt: [-0.18, 0, 0.55], omega: 0.2, arriveAngle: 1.6, start: 5.2, color: "#22d3ee", from: [0.1, 0.9, -1.0] },
-];
-const WARP_DUR = 2.3;
-const WARP_DIST = 70;
-const TRAIL_N = 56;
+function buildSoyuz(tex: CraftTextures): { group: THREE.Group; engine: THREE.Sprite } {
+  const foilNormal = tex.foil.clone();
+  foilNormal.repeat.set(5, 3);
+  foilNormal.needsUpdate = true;
+  const foil = new THREE.MeshStandardMaterial({
+    color: 0xd6cfbd, metalness: 0.9, roughness: 0.36, normalMap: foilNormal, normalScale: new THREE.Vector2(0.7, 0.7),
+  });
+  const foilLight = foil.clone();
+  foilLight.color.set(0xe3e1da);
+  const radiatorMap = tex.radiator.clone();
+  radiatorMap.repeat.set(6, 1);
+  radiatorMap.needsUpdate = true;
+  const paint = new THREE.MeshStandardMaterial({ color: 0xffffff, map: radiatorMap, metalness: 0.2, roughness: 0.5 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x2f3236, metalness: 0.7, roughness: 0.45 });
+  const metal = new THREE.MeshStandardMaterial({ color: 0xb8bcc2, metalness: 0.9, roughness: 0.3 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x0b0f16, metalness: 0.2, roughness: 0.05 });
+  const solar = new THREE.MeshStandardMaterial({ map: tex.solar, metalness: 0.55, roughness: 0.28 });
+  const panelBack = new THREE.MeshStandardMaterial({ color: 0x8f8a7c, metalness: 0.4, roughness: 0.6 });
 
-interface Ship {
-  spec: ShipSpec;
-  group: THREE.Group;
-  hull: THREE.Group;
-  trail: THREE.Line;
-  trailPos: Float32Array;
-  flash: THREE.Sprite;
-  plane: THREE.Quaternion;
-  offset: THREE.Vector3; // смещение точки выхода из варпа относительно орбиты
-  prev: THREE.Vector3;
-  born: boolean;
-}
+  const g = new THREE.Group();
 
-function buildShipMesh(accent: THREE.Color, glowTex: THREE.Texture): { group: THREE.Group; hull: THREE.Group } {
-  const hullMat = new THREE.MeshStandardMaterial({ color: 0xcfd7e3, metalness: 0.65, roughness: 0.32 });
-  const darkMat = new THREE.MeshStandardMaterial({ color: 0x2a3140, metalness: 0.5, roughness: 0.5 });
-  const accentMat = new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: 0.7, metalness: 0.3, roughness: 0.4 });
-  const glassMat = new THREE.MeshStandardMaterial({ color: 0x9fd4ff, emissive: 0x3b82f6, emissiveIntensity: 0.6, metalness: 0.2, roughness: 0.1 });
-
-  const hull = new THREE.Group();
-
-  // корпус: тело вращения, нос смотрит в +Z
-  const profile = [[0, 0.58], [0.045, 0.48], [0.095, 0.28], [0.12, 0.02], [0.115, -0.28], [0.085, -0.4], [0, -0.4]]
-    .map(([r, y]) => new THREE.Vector2(r, y));
-  const bodyGeo = new THREE.LatheGeometry(profile, 18);
-  bodyGeo.rotateX(Math.PI / 2);
-  hull.add(new THREE.Mesh(bodyGeo, hullMat));
-
-  // стреловидные крылья
-  for (const side of [1, -1]) {
-    const s = new THREE.Shape();
-    s.moveTo(0, 0.12);
-    s.lineTo(0.58 * side, -0.24);
-    s.lineTo(0.56 * side, -0.36);
-    s.lineTo(0, -0.3);
-    s.closePath();
-    const wingGeo = new THREE.ExtrudeGeometry(s, { depth: 0.022, bevelEnabled: false });
-    wingGeo.rotateX(Math.PI / 2);
-    wingGeo.translate(0, 0.011, 0);
-    const wing = new THREE.Mesh(wingGeo, hullMat);
-    wing.material = hullMat;
-    hull.add(wing);
-    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.05, 0.2), accentMat);
-    tip.position.set(0.57 * side, 0, -0.27);
-    hull.add(tip);
+  // приборно-агрегатный отсек с расширяющейся «юбкой»
+  g.add(lathe([[0, -3.85], [0.95, -3.85], [1.36, -3.7], [1.36, -3.15], [1.1, -2.6], [1.1, -1.05], [0.98, -0.92], [0, -0.92]], paint));
+  // спускаемый аппарат — «фара»
+  g.add(lathe([[0, -0.95], [0.9, -0.93], [1.08, -0.78], [1.1, -0.55], [1.04, 0.0], [0.9, 0.6], [0.72, 1.08], [0.5, 1.3], [0, 1.32]], foil));
+  // переходной шлюз и бытовой отсек
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.55, 0.3, 32), dark);
+  neck.rotation.x = Math.PI / 2;
+  neck.position.z = 1.38;
+  g.add(neck);
+  const orbital = new THREE.Mesh(new THREE.SphereGeometry(1.12, 48, 32), foilLight);
+  orbital.scale.set(1, 1, 1.12);
+  orbital.position.z = 2.62;
+  g.add(orbital);
+  // стыковочный агрегат «штырь»
+  const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.48, 0.25, 32), metal);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.z = 3.85;
+  g.add(ring);
+  const probe = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.6, 12), metal);
+  probe.rotation.x = Math.PI / 2;
+  probe.position.z = 4.25;
+  g.add(probe);
+  // иллюминаторы
+  for (const [z, a] of [[2.5, 0.6], [0.1, -0.4]] as const) {
+    const w = new THREE.Mesh(new THREE.CircleGeometry(0.11, 20), glass);
+    const r = z > 1 ? 1.12 : 1.05;
+    w.position.set(Math.sin(a) * (r + 0.005), Math.cos(a) * (r + 0.005), z);
+    w.lookAt(w.position.clone().multiplyScalar(2).setZ(z));
+    g.add(w);
   }
-  // полоса цвета корабля по корпусу
-  const stripe = new THREE.Mesh(new THREE.TorusGeometry(0.118, 0.012, 6, 24), accentMat);
-  stripe.position.z = 0.05;
-  hull.add(stripe);
+  // двигатель
+  g.add(lathe([[0.18, -3.85], [0.32, -4.15], [0.42, -4.35], [0.38, -4.35], [0.14, -3.88]], dark, 24));
+  // антенны «Курс» и штыревые
+  const rod = (len: number, x: number, y: number, z: number, rx = 0, rz = 0) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, len, 6), metal);
+    m.position.set(x, y, z);
+    m.rotation.set(rx, 0, rz);
+    g.add(m);
+  };
+  rod(1.4, 0.55, 1.1, 3.1, 0.4, -0.45);
+  rod(1.2, -0.7, -0.9, 2.2, -0.3, 0.6);
+  rod(1.8, 0, 1.6, -2.9, 0.15, 0);
+  const dish = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 8, 0, Math.PI * 2, 0, Math.PI / 3), metal);
+  dish.position.set(0.95, 0.9, 3.35);
+  dish.rotation.set(0.6, 0, -0.8);
+  g.add(dish);
 
-  const cockpit = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 12), glassMat);
-  cockpit.scale.set(1, 0.75, 2.1);
-  cockpit.position.set(0, 0.075, 0.24);
-  hull.add(cockpit);
+  // солнечные батареи: два крыла по 4 секции
+  for (const side of [1, -1]) {
+    const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.75, 8), metal);
+    boom.rotation.z = Math.PI / 2;
+    boom.position.set(side * 1.45, 0, -2.25);
+    g.add(boom);
+    for (let i = 0; i < 4; i++) {
+      const seg = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.03, 1.3), [panelBack, panelBack, solar, panelBack, panelBack, panelBack]);
+      seg.position.set(side * (1.85 + i * 1.03 + 0.49), 0, -2.25);
+      g.add(seg);
+    }
+  }
 
-  const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.095, 0.1, 16, 1, true), darkMat);
-  nozzle.rotation.x = Math.PI / 2;
-  nozzle.position.z = -0.44;
-  hull.add(nozzle);
-
-  const group = new THREE.Group();
-  group.add(hull);
-
-  // свечение двигателя — вне hull, чтобы не растягивалось вместе с корпусом при варпе
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: glowTex, color: accent.clone().lerp(new THREE.Color("#ffffff"), 0.35),
-    blending: THREE.AdditiveBlending, depthWrite: false, transparent: true,
+  // свечение двигателя при торможении
+  const engine = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex.glow, color: 0xbfd8ff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0,
   }));
-  glow.position.z = -0.52;
-  glow.scale.setScalar(0.55);
-  group.add(glow);
+  engine.position.z = -4.6;
+  engine.scale.setScalar(2.4);
+  g.add(engine);
 
-  group.scale.setScalar(0.62);
-  return { group, hull };
+  g.scale.setScalar(0.1);
+  return { group: g, engine };
+}
+
+/** Перекрашивает модель МКС из NASA 3D Resources: у неё нет текстур, только безымянные материалы. */
+function dressISS(root: THREE.Object3D, tex: CraftTextures) {
+  const solarMap = tex.solar.clone();
+  solarMap.needsUpdate = true;
+  const solar = new THREE.MeshStandardMaterial({ map: solarMap, metalness: 0.55, roughness: 0.3, side: THREE.DoubleSide });
+  const truss = new THREE.MeshStandardMaterial({ color: 0xa3a7ad, metalness: 0.85, roughness: 0.38 });
+  const module = new THREE.MeshStandardMaterial({ color: 0xe4e2db, metalness: 0.12, roughness: 0.55 });
+  const moduleShade = new THREE.MeshStandardMaterial({ color: 0xc9c7c0, metalness: 0.3, roughness: 0.45 });
+  const radiator = new THREE.MeshStandardMaterial({ color: 0xf2f3f4, metalness: 0.05, roughness: 0.42, side: THREE.DoubleSide });
+  const gold = new THREE.MeshStandardMaterial({ color: 0xc9a253, metalness: 0.9, roughness: 0.35 });
+
+  // в модели лежат 7 отдельных колец (bendedtru*, pCylinder*) в стороне от станции — убираем
+  const stray: THREE.Object3D[] = [];
+  root.traverse((o) => /^(bendedtru|pCylinder)/.test(o.name) && stray.push(o));
+  stray.forEach((o) => o.removeFromParent());
+
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    const name = (m.material as THREE.Material).name ?? "";
+    if (name.startsWith("lambert7")) {
+      // солнечные крылья: у геометрии нет UV — строим их из координат плоскости панели
+      const p = m.geometry.attributes.position;
+      const uv = new Float32Array(p.count * 2);
+      for (let i = 0; i < p.count; i++) {
+        uv[i * 2] = p.getZ(i) / 1.1;
+        uv[i * 2 + 1] = p.getY(i) / 1.1;
+      }
+      m.geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+      m.material = solar;
+    } else if (/^(anisotropic1|apollohorns|bendedtruss)/.test(name)) m.material = truss;
+    else if (/^(soyuz_blinn4|lambert3)/.test(name)) m.material = radiator;
+    else if (/^(lambert4|blinn4)/.test(name)) m.material = gold;
+    else if (/^(blinn3|lambert6|initialShading)/.test(name)) m.material = moduleShade;
+    else m.material = module;
+  });
+}
+
+// ---------- корабли на орбитах ----------
+interface CraftSpec {
+  kind: "iss" | "soyuz";
+  /** Точка, где корабль заканчивает торможение (подобрана под финальный кадр широкой раскладки). */
+  arrive: [number, number, number];
+  /** Другая точка прибытия для узкой раскладки (телефоны), если стандартная мешает тексту. */
+  arriveNarrow?: [number, number, number];
+  /** Направление движения по орбите в этой точке; плоскость орбиты = (arrive, dir). */
+  dir: [number, number, number];
+  omega: number; // рад/с
+  start: number;
+  dur: number;
+  from: [number, number, number]; // откуда прилетает (траектория не должна пересекать Землю)
+  dist: number;
+}
+
+const CRAFTS: CraftSpec[] = [
+  // МКС: ферма поперёк кадра, панели развёрнуты к зрителю — ракурс как на фото станции над Землёй
+  { kind: "iss", arrive: [-2.29, -1.31, 3.94], dir: [0.35, 1, 0], omega: 0.03, start: 2.6, dur: 3.8, from: [-1, 0.2, -0.6], dist: 30 },
+  // «Союз» рядом со станцией
+  { kind: "soyuz", arrive: [-0.56, -0.25, 3.23], dir: [0.35, 1, 0], omega: 0.04, start: 3.6, dur: 3.4, from: [1, -0.2, 0.3], dist: 40 },
+  // второй «Союз» — ближе к камере: крупный план
+  { kind: "soyuz", arrive: [-3.07, 1.91, 7.11], arriveNarrow: [1.48, 0.74, 8.11], dir: [1, 0.15, 0.2], omega: 0.02, start: 4.4, dur: 3.6, from: [1, 0.5, -0.4], dist: 40 },
+];
+
+interface Craft {
+  spec: CraftSpec;
+  group: THREE.Group;
+  engine?: THREE.Sprite;
+  arrive: THREE.Vector3;
+  axis: THREE.Vector3; // нормаль плоскости орбиты
+  offset: THREE.Vector3;
 }
 
 // ---------- сцена ----------
 export function createLandingScene(host: HTMLElement, opts: SceneOptions): LandingScene {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
-  renderer.setClearColor(0x05070b, 1);
+  renderer.setClearColor(0x020306, 1);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
   renderer.domElement.style.display = "block";
   renderer.domElement.style.width = "100%";
   renderer.domElement.style.height = "100%";
   host.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 2000);
-  const glowTex = makeGlowTexture();
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 2000);
+  const disposables: { dispose: () => void }[] = [];
 
-  // фон
-  const nebulaMat = new THREE.ShaderMaterial({
-    vertexShader: NEBULA_VERT, fragmentShader: NEBULA_FRAG,
-    uniforms: { uFade: { value: 0 } }, side: THREE.BackSide, depthWrite: false,
+  // фон: звёзды и слабый Млечный Путь
+  const skyMat = new THREE.ShaderMaterial({
+    vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, uniforms: { uFade: { value: 0 } },
+    side: THREE.BackSide, depthWrite: false, toneMapped: false,
   });
-  const nebula = new THREE.Mesh(new THREE.SphereGeometry(500, 48, 32), nebulaMat);
-  nebula.renderOrder = -2;
-  scene.add(nebula);
-
-  const stars = makeStars(window.innerWidth < 700 ? 2600 : 5000);
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), skyMat);
+  sky.renderOrder = -2;
+  scene.add(sky);
+  const stars = makeStars(window.innerWidth < 700 ? 3000 : 6000);
   stars.renderOrder = -1;
   scene.add(stars);
   const starMat = stars.material as THREE.ShaderMaterial;
 
-  // планета
+  // солнце
   const sun = new THREE.Vector3();
-  const sunFrom = new THREE.Vector3(-0.15, 0.3, -1).normalize(); // свет из-за планеты
-  const sunTo = new THREE.Vector3(-0.85, 0.35, 0.5).normalize();
-  const planetUniforms = { uSun: { value: sun }, uLight: { value: 0 } };
+  const sunFrom = new THREE.Vector3(-0.1, 0.25, -1).normalize(); // из-за планеты
+  const sunTo = new THREE.Vector3(-0.85, 0.32, 0.45).normalize();
+  sun.copy(sunTo);
 
+  // карта окружения для отражений на металле
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const envScene = new THREE.Scene();
+  const envMat = new THREE.ShaderMaterial({
+    vertexShader: SKY_VERT, fragmentShader: ENV_FRAG, uniforms: { uSun: { value: sunTo.clone() } }, side: THREE.BackSide,
+  });
+  envScene.add(new THREE.Mesh(new THREE.SphereGeometry(10, 64, 32), envMat));
+  const envRT = pmrem.fromScene(envScene, 0.02);
+  scene.environment = envRT.texture;
+  envScene.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+  envMat.dispose();
+  pmrem.dispose();
+  disposables.push(envRT);
+
+  // Земля
+  const blank = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+  blank.needsUpdate = true;
+  const earthUniforms = {
+    uDay: { value: blank as THREE.Texture },
+    uNight: { value: blank as THREE.Texture },
+    uBRC: { value: blank as THREE.Texture },
+    uSun: { value: sun },
+    uLight: { value: 0 },
+  };
   const tiltGroup = new THREE.Group();
-  tiltGroup.rotation.z = 0.41; // наклон оси, как у Земли (~23.4°)
+  tiltGroup.rotation.z = 0.41; // наклон оси ≈ 23.4°
   scene.add(tiltGroup);
-
-  const planet = new THREE.Mesh(
-    new THREE.SphereGeometry(PLANET_R, 128, 96),
-    new THREE.ShaderMaterial({ vertexShader: SPHERE_VERT, fragmentShader: PLANET_FRAG, uniforms: planetUniforms }),
+  const earth = new THREE.Mesh(
+    new THREE.SphereGeometry(EARTH_R, 160, 120),
+    new THREE.ShaderMaterial({ vertexShader: EARTH_VERT, fragmentShader: EARTH_FRAG, uniforms: earthUniforms }),
   );
-  tiltGroup.add(planet);
-
+  tiltGroup.add(earth);
   const clouds = new THREE.Mesh(
-    new THREE.SphereGeometry(PLANET_R * 1.012, 96, 64),
+    new THREE.SphereGeometry(EARTH_R * 1.008, 128, 96),
     new THREE.ShaderMaterial({
-      vertexShader: SPHERE_VERT, fragmentShader: CLOUD_FRAG, uniforms: planetUniforms,
-      transparent: true, depthWrite: false,
+      vertexShader: EARTH_VERT, fragmentShader: CLOUD_FRAG, uniforms: earthUniforms, transparent: true, depthWrite: false,
     }),
   );
   tiltGroup.add(clouds);
-
   const atmo = new THREE.Mesh(
-    new THREE.SphereGeometry(PLANET_R * 1.17, 96, 64),
+    new THREE.SphereGeometry(EARTH_R * 1.06, 96, 64),
     new THREE.ShaderMaterial({
-      vertexShader: ATMO_VERT, fragmentShader: ATMO_FRAG, uniforms: planetUniforms,
-      side: THREE.BackSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      vertexShader: ATMO_VERT, fragmentShader: ATMO_FRAG, uniforms: earthUniforms,
+      side: THREE.BackSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
     }),
   );
   scene.add(atmo);
 
-  // свет для кораблей
-  const ambient = new THREE.AmbientLight(0x8fa6d6, 0.25);
-  const sunLight = new THREE.DirectionalLight(0xfff3e0, 0);
-  scene.add(ambient, sunLight);
+  // свет: Солнце + отражённый от Земли голубоватый свет
+  const sunLight = new THREE.DirectionalLight(0xfff4e6, 0);
+  const earthShine = new THREE.PointLight(0x6f9bdc, 0, 0, 0);
+  const ambient = new THREE.AmbientLight(0x9fb4d9, 0.04);
+  scene.add(sunLight, earthShine, ambient);
 
   // корабли
-  const tmp = new THREE.Vector3();
-  const orbitPos = (s: Ship, t: number, out: THREE.Vector3) => {
-    const a = s.spec.arriveAngle + s.spec.omega * (t - s.spec.start - WARP_DUR);
-    return out.set(Math.cos(a) * s.spec.radius, 0, Math.sin(a) * s.spec.radius).applyQuaternion(s.plane);
+  const tex: CraftTextures = { solar: makeSolarTexture(), foil: makeFoilNormal(), radiator: makeRadiatorTexture(), glow: makeGlowTexture() };
+  disposables.push(...Object.values(tex));
+
+  const orbitPos = (c: Craft, t: number, out: THREE.Vector3) =>
+    out.copy(c.arrive).applyAxisAngle(c.axis, c.spec.omega * (t - c.spec.start - c.spec.dur));
+  const craftPos = (c: Craft, t: number, out: THREE.Vector3) => {
+    const u = clamp01((t - c.spec.start) / c.spec.dur);
+    return orbitPos(c, t, out).addScaledVector(c.offset, Math.pow(1 - u, 3));
   };
 
-  const ships: Ship[] = SHIPS.map((spec) => {
-    const accent = new THREE.Color(spec.color);
-    const { group, hull } = buildShipMesh(accent, glowTex);
+  const crafts: Craft[] = [];
+  let wide = isWideLayout(host.clientWidth || window.innerWidth, host.clientHeight || window.innerHeight);
+  const setOrbit = (c: Craft) => {
+    c.arrive.set(...(!wide && c.spec.arriveNarrow ? c.spec.arriveNarrow : c.spec.arrive));
+    c.axis.crossVectors(c.arrive, new THREE.Vector3(...c.spec.dir)).normalize();
+  };
+  const addCraft =(spec: CraftSpec, group: THREE.Group, engine?: THREE.Sprite) => {
+    const c: Craft = { spec, group, engine, arrive: new THREE.Vector3(), axis: new THREE.Vector3(), offset: new THREE.Vector3() };
+    setOrbit(c);
+    c.offset.set(...spec.from).normalize().multiplyScalar(spec.dist);
     group.visible = false;
     scene.add(group);
-
-    const trailPos = new Float32Array(TRAIL_N * 3);
-    const trailCol = new Float32Array(TRAIL_N * 3);
-    for (let i = 0; i < TRAIL_N; i++) {
-      const k = Math.pow(1 - i / (TRAIL_N - 1), 1.6);
-      trailCol.set([accent.r * k, accent.g * k, accent.b * k], i * 3);
+    crafts.push(c);
+  };
+  for (const spec of CRAFTS) {
+    if (spec.kind === "soyuz") {
+      const { group, engine } = buildSoyuz(tex);
+      addCraft(spec, group, engine);
     }
-    const trailGeo = new THREE.BufferGeometry();
-    trailGeo.setAttribute("position", new THREE.BufferAttribute(trailPos, 3));
-    trailGeo.setAttribute("color", new THREE.BufferAttribute(trailCol, 3));
-    const trail = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({
-      vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
-    }));
-    trail.frustumCulled = false;
-    trail.visible = false;
-    scene.add(trail);
+  }
 
-    const flash = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: glowTex, color: accent.clone().lerp(new THREE.Color("#ffffff"), 0.6),
-      blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0,
-    }));
-    flash.visible = false;
-    scene.add(flash);
-
-    const plane = new THREE.Quaternion().setFromEuler(new THREE.Euler(...spec.tilt));
-    const ship: Ship = {
-      spec, group, hull, trail, trailPos, flash, plane,
-      offset: new THREE.Vector3(), prev: new THREE.Vector3(), born: false,
-    };
-    // точка выхода из варпа: далеко в глубине кадра, «позади» по ходу орбиты
-    const arrive = orbitPos(ship, spec.start + WARP_DUR, new THREE.Vector3());
-    const tangent = orbitPos(ship, spec.start + WARP_DUR + 0.05, new THREE.Vector3()).sub(arrive).normalize();
-    ship.offset.copy(new THREE.Vector3(...spec.from).normalize()).addScaledVector(tangent, -0.7).normalize().multiplyScalar(WARP_DIST);
-    flash.position.copy(arrive).add(ship.offset);
-    return ship;
+  // загрузка ассетов: время сцены не идёт, пока не загрузятся текстуры Земли и МКС
+  let ready = false;
+  let disposed = false;
+  const texLoader = new THREE.TextureLoader();
+  const loadTex = (file: string, srgb: boolean) =>
+    texLoader.loadAsync(ASSETS + file).then((t) => {
+      if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+      disposables.push(t);
+      return t;
+    });
+  const issSpec = CRAFTS.find((c) => c.kind === "iss")!;
+  // модель NASA сжата Draco — декодер лежит в public/landing/draco (скопирован из three/examples)
+  const draco = new DRACOLoader().setDecoderPath(ASSETS + "draco/").setDecoderConfig({ type: "wasm" });
+  const loadISS = new GLTFLoader().setDRACOLoader(draco).loadAsync(ASSETS + "iss.glb").finally(() => draco.dispose()).then((gltf) => {
+    const model = gltf.scene;
+    dressISS(model, tex);
+    // центрируем и масштабируем: ферма ≈ 2.5 единицы сцены
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    model.position.sub(box.getCenter(new THREE.Vector3()));
+    const g = new THREE.Group();
+    g.add(model);
+    g.scale.setScalar(2.5 / Math.max(size.x, size.y, size.z));
+    return g;
   });
-
-  const shipPos = (s: Ship, t: number, out: THREE.Vector3) => {
-    const u = clamp01((t - s.spec.start) / WARP_DUR);
-    const f = Math.pow(1 - u, 4); // резкое торможение после выхода из варпа
-    return orbitPos(s, t, out).addScaledVector(s.offset, f);
-  };
-
-  const resetTrail = (s: Ship, p: THREE.Vector3) => {
-    for (let i = 0; i < TRAIL_N; i++) s.trailPos.set([p.x, p.y, p.z], i * 3);
-    (s.trail.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
-  };
+  const timeout = new Promise<void>((r) => setTimeout(r, 12000));
+  Promise.race([
+    Promise.allSettled([
+      loadTex("earth_day_4096.jpg", true).then((t) => (earthUniforms.uDay.value = t)),
+      loadTex("earth_night_4096.jpg", true).then((t) => (earthUniforms.uNight.value = t)),
+      loadTex("earth_bump_roughness_clouds_4096.jpg", false).then((t) => (earthUniforms.uBRC.value = t)),
+      loadISS.then((g) => { if (!disposed) addCraft(issSpec, g); }),
+    ]).then((rs) => rs.forEach((r) => r.status === "rejected" && console.warn("landing: ассет не загрузился", r.reason))),
+    timeout,
+  ]).then(() => {
+    if (disposed) return;
+    ready = true;
+    opts.onPhase("ready");
+  });
 
   // камера
   const pointer = { x: 0, y: 0, sx: 0, sy: 0 };
@@ -530,7 +707,6 @@ export function createLandingScene(host: HTMLElement, opts: SceneOptions): Landi
   const camTarget = new THREE.Vector3();
   const camFinalTarget = new THREE.Vector3();
   let aspect = 1;
-  let wide = true;
   const resize = () => {
     const w = host.clientWidth || window.innerWidth;
     const h = host.clientHeight || window.innerHeight;
@@ -539,8 +715,10 @@ export function createLandingScene(host: HTMLElement, opts: SceneOptions): Landi
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
     starMat.uniforms.uPR.value = renderer.getPixelRatio();
-    // в финале планета уходит вправо (широкий экран) или вверх (узкий), освобождая место под текст
+    // в финале Земля уходит вправо (широкий экран) или вверх (узкий), освобождая место под текст
+    const wasWide = wide;
     wide = isWideLayout(w, h);
+    if (wide !== wasWide) crafts.forEach(setOrbit);
     if (wide) camFinalTarget.set(-3.4, 0, 0);
     else camFinalTarget.set(0, -4.6, 0);
   };
@@ -549,124 +727,120 @@ export function createLandingScene(host: HTMLElement, opts: SceneOptions): Landi
   resize();
 
   // время
-  let T = opts.reducedMotion ? 10 : (opts.startAt ?? 0);
+  let T = opts.reducedMotion ? 12 : (opts.startAt ?? 0);
   const timeScale = opts.reducedMotion ? 0.25 : 1;
   const fired = new Set<Phase>();
   let last = performance.now();
-
-  const firePhases = () => {
-    for (const [at, p] of PHASES) {
-      if (T >= at && !fired.has(p)) {
-        fired.add(p);
-        opts.onPhase(p);
-      }
-    }
-  };
+  const tmp = new THREE.Vector3();
+  const tmp2 = new THREE.Vector3();
+  const basis = new THREE.Matrix4();
+  const radial = new THREE.Vector3();
+  const tangent = new THREE.Vector3();
+  const normal = new THREE.Vector3();
 
   const frame = () => {
     const now = performance.now();
-    const dt = Math.min((now - last) / 1000, 0.05) * timeScale;
+    const dt = Math.min((now - last) / 1000, 0.1) * timeScale;
     last = now;
-    T += dt;
-    firePhases();
+    if (ready) {
+      T += dt;
+      for (const [at, p] of PHASES) {
+        if (T >= at && !fired.has(p)) {
+          fired.add(p);
+          opts.onPhase(p);
+        }
+      }
+    }
 
-    const fade = smooth(0, 1.6, T);
+    const fade = ready ? smooth(0, 2, T) : 0;
     starMat.uniforms.uTime.value = T;
     starMat.uniforms.uFade.value = fade;
-    nebulaMat.uniforms.uFade.value = fade;
+    skyMat.uniforms.uFade.value = fade;
 
-    // «восход»: свет выходит из-за планеты
-    const k = easeInOutCubic(clamp01((T - 0.3) / 4.5));
+    // «восход»: свет выходит из-за Земли
+    const k = easeInOutCubic(clamp01((T - 0.2) / 4.8));
     sun.copy(sunFrom).lerp(sunTo, k).normalize();
-    const light = 0.12 + 0.88 * smooth(0.2, 3.8, T);
-    planetUniforms.uLight.value = light;
-    sunLight.position.copy(sun).multiplyScalar(10);
-    sunLight.intensity = 2.6 * light;
+    const light = ready ? 0.1 + 0.9 * smooth(0.1, 4.2, T) : 0;
+    earthUniforms.uLight.value = light;
+    sunLight.position.copy(sun).multiplyScalar(20);
+    sunLight.intensity = 3.2 * light;
+    earthShine.intensity = 0.9 * light;
 
-    planet.rotation.y = 0.9 + T * 0.06;
-    clouds.rotation.y = 0.9 + T * 0.075;
+    // вращение Земли: запад → восток; к финалу к камере повёрнуты Америки
+    earth.rotation.y = -0.95 + T * 0.03;
+    clouds.rotation.y = -0.95 + T * 0.034;
 
-    // камера: подлёт, затем смещение под финальный текст, плюс лёгкий параллакс
-    const fly = easeInOutCubic(clamp01(T / 5));
+    // камера: подлёт, смещение под финальный текст, лёгкий параллакс
+    const fly = easeInOutCubic(clamp01(T / 5.5));
     const fin = easeInOutCubic(smooth(5.8, 9.0, T));
-    // на узких экранах камера отъезжает дальше, чтобы планета влезла по ширине и над текстом
     const dist = wide ? 16.5 : THREE.MathUtils.lerp(aspect < 1 ? 21 : 17, aspect < 1 ? 25 : 21, fin);
     pointer.sx += (pointer.x - pointer.sx) * 0.04;
     pointer.sy += (pointer.y - pointer.sy) * 0.04;
     camTarget.copy(camFinalTarget).multiplyScalar(fin);
     camera.position.set(
       camTarget.x * 0.55 + pointer.sx * 0.7,
-      THREE.MathUtils.lerp(7, 1.1, fly) + camTarget.y * 0.35 - pointer.sy * 0.45,
-      THREE.MathUtils.lerp(46, dist, fly),
+      THREE.MathUtils.lerp(6, 1.1, fly) + camTarget.y * 0.35 - pointer.sy * 0.45,
+      THREE.MathUtils.lerp(44, dist, fly),
     );
     camera.lookAt(camTarget);
 
     // корабли
-    for (const s of ships) {
-      const age = T - s.spec.start;
-      if (age < 0) continue;
-      const p = shipPos(s, T, tmp);
-      if (!s.born) {
-        s.born = true;
-        s.group.visible = true;
-        s.trail.visible = true;
-        s.prev.copy(shipPos(s, T - 0.016, new THREE.Vector3()));
-        resetTrail(s, s.prev);
+    for (const c of crafts) {
+      const age = T - c.spec.start;
+      c.group.visible = ready && age >= 0;
+      if (!c.group.visible) continue;
+      const p = craftPos(c, T, tmp);
+      c.group.position.copy(p);
+      const u = clamp01(age / c.spec.dur);
+      if (c.spec.kind === "iss") {
+        // МКС: модули вдоль скорости, ферма поперёк орбиты, «низ» к Земле
+        orbitPos(c, T, radial).normalize().negate(); // ось X модели — к Земле
+        orbitPos(c, T + 0.1, tangent).sub(orbitPos(c, T, tmp2)).normalize();
+        normal.crossVectors(radial, tangent).normalize(); // правая тройка, без зеркалирования
+        basis.makeBasis(radial, tangent, normal);
+        c.group.quaternion.setFromRotationMatrix(basis);
+      } else {
+        // «Союз»: нос по направлению движения, солнечные батареи параллельно горизонту
+        const vel = craftPos(c, T + 0.05, tmp2).sub(p);
+        c.group.up.copy(p).normalize();
+        c.group.lookAt(vel.add(p));
+        if (c.engine) {
+          // тормозной импульс: двигатель светится, пока корабль замедляется
+          (c.engine.material as THREE.SpriteMaterial).opacity = Math.pow(1 - u, 1.5) * 0.9;
+        }
       }
-      // вспышка выхода из варпа
-      const fu = age / 0.8;
-      s.flash.visible = fu < 1;
-      if (s.flash.visible) {
-        s.flash.scale.setScalar(2 + 14 * fu);
-        (s.flash.material as THREE.SpriteMaterial).opacity = Math.pow(1 - fu, 2);
-      }
-
-      const vel = shipPos(s, T + 0.02, new THREE.Vector3()).sub(p);
-      const speed = vel.length() / 0.02;
-      s.group.position.copy(p);
-      s.group.lookAt(tmp.copy(p).add(vel));
-      // растяжение корпуса на высокой скорости — эффект варпа
-      const stretch = 1 + Math.min(speed * 0.05, 9);
-      s.hull.scale.set(1 / Math.sqrt(stretch), 1 / Math.sqrt(stretch), stretch);
-
-      // шлейф: сдвигаем историю и пишем текущую позицию двигателя
-      s.trailPos.copyWithin(3, 0, (TRAIL_N - 1) * 3);
-      const back = vel.normalize().multiplyScalar(-0.3);
-      s.trailPos.set([s.group.position.x + back.x, s.group.position.y + back.y, s.group.position.z + back.z], 0);
-      (s.trail.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
     }
 
     renderer.render(scene, camera);
   };
-
   renderer.setAnimationLoop(frame);
 
   const skip = () => {
-    if (T >= FINAL_T) return;
-    T = FINAL_T + 0.6;
-    for (const s of ships) {
-      s.born = true;
-      s.group.visible = true;
-      s.trail.visible = true;
-      s.flash.visible = false;
-      resetTrail(s, shipPos(s, T, new THREE.Vector3()));
-    }
+    if (T < FINAL_T) T = FINAL_T + 0.6;
   };
 
   const dispose = () => {
+    disposed = true;
     renderer.setAnimationLoop(null);
     ro.disconnect();
     window.removeEventListener("pointermove", onPointer);
     const mats = new Set<THREE.Material>();
     scene.traverse((o) => {
       const m = o as THREE.Mesh;
-      if (m.geometry) m.geometry.dispose();
+      m.geometry?.dispose();
       const mat = m.material as THREE.Material | THREE.Material[] | undefined;
       if (Array.isArray(mat)) mat.forEach((x) => mats.add(x));
       else if (mat) mats.add(mat);
     });
-    mats.forEach((m) => m.dispose());
-    glowTex.dispose();
+    mats.forEach((m) => {
+      const map = (m as THREE.MeshStandardMaterial).map;
+      const nm = (m as THREE.MeshStandardMaterial).normalMap;
+      map?.dispose();
+      nm?.dispose();
+      m.dispose();
+    });
+    disposables.forEach((d) => d.dispose());
+    blank.dispose();
     renderer.dispose();
     renderer.domElement.remove();
   };

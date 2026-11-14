@@ -71,6 +71,15 @@ export function LandingPage() {
         )}
       </header>
 
+      {phase === "boot" && !noWebGL && (
+        <div role="status" className="absolute inset-0 z-10 flex items-center justify-center">
+          <span className="flex items-center gap-3 font-mono text-xs uppercase tracking-[0.2em] text-subtle">
+            <span aria-hidden className="h-4 w-4 animate-spin rounded-full border-2 border-white/15 border-t-accent" />
+            Выход на орбиту…
+          </span>
+        </div>
+      )}
+
       {/* подписи вступления */}
       <div aria-live="polite" className="pointer-events-none absolute inset-x-0 bottom-[16%] z-10 flex justify-center px-6">
         {caption && !final && (
@@ -113,6 +122,18 @@ export function LandingPage() {
             </div>
           </div>
         </section>
+      )}
+
+      {/* авторство ассетов (CC BY 4.0 требует указания) */}
+      {final && (
+        <p className="landing-rise absolute bottom-2 right-3 z-10 text-[10px] text-subtle/70 sm:right-4"
+          style={{ animationDelay: "900ms" }}>
+          Текстуры Земли:{" "}
+          <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">
+            Solar System Scope
+          </a>{" "}
+          (CC BY 4.0) · Модель МКС: NASA
+        </p>
       )}
     </div>
   );
