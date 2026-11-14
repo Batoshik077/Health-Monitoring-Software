@@ -426,3 +426,46 @@ input[type="range"] {
   accent-color: var(--color-accent);
   height: 44px;
 }
+
+/* ---------- Карта тела ---------- */
+.body-map { overflow: visible; }
+.body-outline { stroke: rgb(96 165 250 / 0.55); stroke-width: 1.2; transition: stroke 300ms, filter 300ms; }
+.body-irradiated .body-outline { stroke: var(--organ); filter: drop-shadow(0 0 6px var(--organ)); }
+@keyframes body-scan { from { transform: translateY(0); } to { transform: translateY(500px); } }
+.body-scan { animation: body-scan 4.5s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+
+.organ { cursor: pointer; outline: none; }
+.organ .organ-shape {
+  fill: color-mix(in srgb, var(--organ) 22%, transparent);
+  stroke: var(--organ); stroke-width: 1.2;
+  transition: fill 250ms, stroke-width 250ms, filter 250ms;
+}
+.organ .organ-detail { fill: none; stroke: var(--organ); stroke-opacity: 0.5; stroke-width: 1; }
+.organ .bone-line { fill: none; stroke: var(--organ); stroke-opacity: 0.65; stroke-width: 2.2; stroke-linecap: round; }
+.organ .bone-hit { fill: none; stroke: transparent; stroke-width: 12; stroke-linecap: round; }
+.organ .vertebra, .organ .joint { fill: color-mix(in srgb, var(--organ) 30%, transparent); stroke: var(--organ); stroke-opacity: 0.6; stroke-width: 0.6; }
+.organ .rad-field { stroke: var(--organ); stroke-opacity: 0.18; stroke-width: 1; stroke-dasharray: 3 7; }
+.organ .rad-badge { fill: color-mix(in srgb, var(--organ) 15%, var(--color-surface)); }
+.organ .rad-icon { fill: var(--organ); }
+
+.organ:hover .organ-shape, .organ:focus-visible .organ-shape { fill: color-mix(in srgb, var(--organ) 40%, transparent); stroke-width: 1.8; }
+.organ:hover .bone-line, .organ:focus-visible .bone-line { stroke-opacity: 1; }
+.organ:hover .rad-field { stroke-opacity: 0.45; }
+.organ:focus-visible .organ-shape, .organ:focus-visible .bone-line { filter: drop-shadow(0 0 4px var(--color-accent)); }
+
+.organ-selected .organ-shape { fill: color-mix(in srgb, var(--organ) 50%, transparent); stroke-width: 2; filter: drop-shadow(0 0 8px var(--organ)); }
+.organ-selected .bone-line { stroke-opacity: 1; stroke-width: 3; filter: drop-shadow(0 0 6px var(--organ)); }
+.organ-selected .rad-field { stroke-opacity: 0.55; stroke-width: 1.5; }
+
+@keyframes organ-alert { 0%, 100% { opacity: 1; filter: drop-shadow(0 0 2px var(--organ)); } 50% { opacity: 0.75; filter: drop-shadow(0 0 10px var(--organ)); } }
+.organ-red .organ-shape { fill: color-mix(in srgb, var(--organ) 45%, transparent); stroke-width: 1.8; }
+.organ-yellow .organ-shape, .organ-yellow .bone-line { animation: organ-alert 2.2s ease-in-out infinite; }
+.organ-red .organ-shape, .organ-red .bone-line, .organ-red .rad-field { animation: organ-alert 1s ease-in-out infinite; }
+
+@keyframes heart-beat { 0%, 100% { transform: scale(1); } 12% { transform: scale(1.14); } 24% { transform: scale(0.98); } 36% { transform: scale(1.06); } }
+.heart-beat { transform-box: fill-box; transform-origin: center; animation: heart-beat 1s ease-in-out infinite; }
+@keyframes breathe { 50% { transform: scale(1.04, 1.06); } }
+.organ-breathe { transform-box: fill-box; transform-origin: 50% 20%; animation: breathe 4s ease-in-out infinite; }
+
+@keyframes body-detail-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.body-detail { animation: body-detail-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both; }

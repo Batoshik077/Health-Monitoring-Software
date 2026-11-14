@@ -1,10 +1,11 @@
 import {
-  Bone, Brain, ChevronRight, ClipboardCheck, Dumbbell, FlaskConical, HeartPulse, ListChecks, MessageSquare, Moon,
-  Radiation, ShieldPlus, Star, Stethoscope, User, Wind, Wrench, type LucideIcon,
+  Bone, ChevronRight, ClipboardCheck, Dumbbell, FlaskConical, HeartPulse, ListChecks, MessageSquare, Moon,
+  Radiation, Star, Stethoscope, User, Wrench, type LucideIcon,
 } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { Link, useParams } from "react-router-dom";
 import { EmptyState, Gauge, PageSkeleton, Panel, PanelTitle, Skeleton, StatusIcon, StatusPill } from "../components/ui";
+import { BodyMap } from "../components/BodyMap";
 import { VitalTile } from "../components/VitalTile";
 import { fmtDur, readinessStatus, roleLabel, statusTone } from "../lib/format";
 import { useSnapshot } from "../lib/snapshot";
@@ -14,9 +15,6 @@ import { useHistory } from "../lib/useHistory";
 // графики (recharts) — отдельным чанком, грузятся после основного экрана
 const TrendsPanel = lazy(() => import("../components/TrendsPanel"));
 
-const SYSTEM_ICONS: Record<string, LucideIcon> = {
-  cardio: HeartPulse, respiratory: Wind, bone_muscle: Bone, behavioral: Brain, immune: ShieldPlus, radiation: Radiation,
-};
 const TODO_ICONS: Record<Todo["kind"], LucideIcon> = { protocol: ListChecks, checkin: ClipboardCheck, exercise: Dumbbell, sleep: Moon };
 const ROLE_ICONS: Record<string, LucideIcon> = { commander: Star, cmo: Stethoscope, engineer: Wrench, scientist: FlaskConical };
 const VITALS = ["hr", "spo2", "rr", "sbp", "temp"] as const;
@@ -89,7 +87,7 @@ function Hero({ a }: { a: Astronaut }) {
 /** Единственный список дел: самопроверка, протоколы тревог, тренировка, сон — всё здесь, без дублей в шапке. */
 function TodoPanel({ a }: { a: Astronaut }) {
   return (
-    <Panel className="xl:col-span-5" labelledBy={`todo-${a.id}`}>
+    <Panel className="xl:col-span-4" labelledBy={`todo-${a.id}`}>
       <PanelTitle id={`todo-${a.id}`} icon={ListChecks}
         aside={a.todo.length > 0 && <span className="num rounded-full bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent">{a.todo.length}</span>}>
         Что сделать сейчас
@@ -120,34 +118,6 @@ function TodoPanel({ a }: { a: Astronaut }) {
           })}
         </ul>
       )}
-    </Panel>
-  );
-}
-
-function SystemsPanel({ a }: { a: Astronaut }) {
-  return (
-    <Panel className="xl:col-span-7" labelledBy={`systems-${a.id}`}>
-      <PanelTitle id={`systems-${a.id}`} icon={HeartPulse}>Системы организма</PanelTitle>
-      <ul className="stagger grid gap-3 sm:grid-cols-2">
-        {Object.entries(a.systems).map(([k, s]) => {
-          const Icon = SYSTEM_ICONS[k] ?? HeartPulse;
-          return (
-            <li key={k} className={`tile flex gap-3 rounded-xl border p-4 ${s.status === "green" ? "border-white/[0.06]" : statusTone[s.status].border}`}>
-              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${statusTone[s.status].bg}`}>
-                <Icon aria-hidden className={`h-5 w-5 ${statusTone[s.status].text}`} />
-              </span>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{s.title}</span>
-                  <StatusIcon status={s.status} className="h-4 w-4" />
-                  <span className="sr-only">{statusTone[s.status].label}</span>
-                </div>
-                <p className="mt-0.5 text-sm text-muted">{s.detail}</p>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
     </Panel>
   );
 }
@@ -235,7 +205,7 @@ export function MePage() {
 
       <div className="grid gap-5 xl:grid-cols-12">
         <TodoPanel a={a} />
-        <SystemsPanel a={a} />
+        <BodyMap key={a.id} a={a} className="xl:order-first xl:col-span-8" />
       </div>
 
       <Panel labelledBy={`vitals-${a.id}`}>
