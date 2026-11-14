@@ -1,6 +1,7 @@
 import { CircleCheck, ClipboardCheck } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { FaceCheck } from "../components/FaceCheck";
 import { PageHeader } from "../components/PageHeader";
 import { Button, Panel, PanelTitle } from "../components/ui";
 import { api } from "../lib/api";
@@ -45,6 +46,7 @@ export function CheckinPage() {
     <form onSubmit={submit} className="mx-auto max-w-2xl">
       <PageHeader eyebrow="Ежедневно · 30 секунд" title="Самопроверка">{name}: как вы себя чувствуете сегодня?</PageHeader>
       <div className="space-y-5">
+        <FaceCheck onApply={(v) => setValues({ ...values, ...v })} />
         <Panel labelledBy="mood-title">
           <PanelTitle id="mood-title" icon={ClipboardCheck}>Самочувствие</PanelTitle>
           <div className="space-y-5">
